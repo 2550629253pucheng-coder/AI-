@@ -8,10 +8,12 @@ export enum GamePhase {
   PREPARING = "PREPARING",
   GENERATING = "GENERATING",
   ROLE_ASSIGNMENT = "ROLE_ASSIGNMENT",
-  ROUND_1 = "ROUND_1",
-  ROUND_2 = "ROUND_2",
-  ROUND_3 = "ROUND_3",
-  VOTING = "VOTING",
+  ROUND_1 = "ROUND_1", // 第1轮：调查立案与线索公布
+  ROUND_2 = "ROUND_2", // 第2轮：疑点深挖与AI现场追问
+  MID_VOTING = "MID_VOTING", // 中期放逐投票（首轮公投出局1人！）
+  EXILE_RESULT = "EXILE_RESULT", // 放逐公投结果公布与身份震撼宣告
+  FINAL_ROUND = "FINAL_ROUND", // 决赛轮：终极剧情大反转与生死辩论
+  VOTING = "VOTING", // 终极审判投票
   SETTLEMENT = "SETTLEMENT",
   RESULT = "RESULT",
   FINISHED = "FINISHED",
@@ -24,9 +26,10 @@ export enum Team {
 
 export enum ActionType {
   ACCUSE = "ACCUSE", // 质疑某人
-  DEFEND = "DEFEND", // 为某人辩护
-  REVEAL = "REVEAL", // 公开线索
-  INVESTIGATE = "INVESTIGATE", // 调查某事
+  DEFEND = "DEFEND", // 为自己或他人辩护
+  REVEAL = "REVEAL", // 公开/梳理线索
+  INVESTIGATE = "INVESTIGATE", // 追查疑点
+  CHAT = "CHAT", // 自由发言/随想探讨
   SILENT = "SILENT", // 保持沉默
 }
 
@@ -52,6 +55,19 @@ export interface RoomPlayer {
   hasActed?: boolean;
   hasVoted?: boolean;
   voteCount?: number;
+  isEliminated?: boolean; // 是否在放逐中出局（出局者不可再投公投票，但可旁观）
+  eliminatedInPhase?: GamePhase;
+}
+
+export interface AIDirectorComment {
+  commentId: string;
+  round: number;
+  phase: GamePhase;
+  text: string;
+  targetedPlayerId?: string;
+  targetedPlayerName?: string;
+  tone?: "SUSPICION" | "INTERROGATION" | "DRAMATIC" | "ROAST";
+  createdAt: number;
 }
 
 export interface TrapMission {
@@ -154,11 +170,22 @@ export interface Game {
   round: number;
   startedAt: number;
   endedAt?: number;
-  winnerTeam?: Team;
+  winnerTeam?: Team | "TIE"; // 好人需抓出全部内鬼；平票判平局(TIE)
+  isTie?: boolean;
   revealedSpies?: { playerId: string; name: string; roleName: string }[];
+  exiledPlayer?: {
+    playerId: string;
+    name: string;
+    roleName: string;
+    team: Team;
+    reason: string;
+  };
+  eliminatedPlayerIds?: string[];
   phaseEndsAt: number; // 倒计时服务端截止时间戳
   events: GameEvent[];
+  aiComments?: AIDirectorComment[];
   actions: PlayerAction[];
+  midVotes?: Vote[];
   votes: Vote[];
   report?: PlayerReport;
   trapTriggered?: boolean;

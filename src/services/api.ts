@@ -237,6 +237,24 @@ export const api = {
     return { game: data.game, room: data.room };
   },
 
+  async submitMidVote(gameId: string, targetPlayerId: string): Promise<{ game: Game; room: Room }> {
+    const { data } = await requestWithAuth(`${BASE_URL}/api/game/mid-vote`, {
+      method: "POST",
+      body: JSON.stringify({ gameId, targetPlayerId }),
+    });
+    if (!data.success) throw new Error(data.error || "Failed to submit exile vote");
+    return { game: data.game, room: data.room };
+  },
+
+  async requestAIDirectorInterrogation(gameId: string): Promise<{ game: Game; room: Room }> {
+    const { data } = await requestWithAuth(`${BASE_URL}/api/game/ai-interrogate`, {
+      method: "POST",
+      body: JSON.stringify({ gameId }),
+    });
+    if (!data.success) throw new Error(data.error || "Failed to call AI Director");
+    return { game: data.game, room: data.room };
+  },
+
   async restartGame(roomId: string): Promise<{ room: Room; game: Game }> {
     const { data } = await requestWithAuth(`${BASE_URL}/api/game/restart`, {
       method: "POST",

@@ -208,16 +208,25 @@ export const COMPANY_THEME: ThemeTemplate = {
 };
 
 export const TRAP_MISSIONS = [
-  { keyword: "加班", description: "诱导任意好人在公开发言中主动说出「加班」" },
-  { keyword: "发誓", description: "诱导任意好人在公开发言中主动说出「发誓」或「我发誓」" },
-  { keyword: "监控", description: "诱导任意好人在公开发言中主动说出「监控」" },
-  { keyword: "不信", description: "诱导任意好人在公开发言中主动说出「不信」" },
-  { keyword: "年终奖", description: "诱导任意好人在公开发言中主动说出「年终奖」" },
-  { keyword: "背锅", description: "诱导任意好人在公开发言中主动说出「背锅」" },
-  { keyword: "证据", description: "诱导任意好人在公开发言中主动说出「证据」" },
-  { keyword: "清白", description: "诱导任意好人在公开发言中主动说出「清白」" },
-  { keyword: "开玩笑", description: "诱导任意好人在公开发言中主动说出「开玩笑」" },
-  { keyword: "查账", description: "诱导任意好人在公开发言中主动说出「查账」" },
+  { keyword: "报警", description: "诱导任意好人在公开发言中主动说出「报警」" },
+  { keyword: "前任", description: "诱导任意好人在公开发言中主动说出「前任」" },
+  { keyword: "手抖", description: "诱导任意好人在公开发言中主动说出「手抖」" },
+  { keyword: "窗帘", description: "诱导任意好人在公开发言中主动说出「窗帘」" },
+  { keyword: "胃痛", description: "诱导任意好人在公开发言中主动说出「胃痛」" },
+  { keyword: "失眠", description: "诱导任意好人在公开发言中主动说出「失眠」" },
+  { keyword: "借钱", description: "诱导任意好人在公开发言中主动说出「借钱」" },
+  { keyword: "红酒", description: "诱导任意好人在公开发言中主动说出「红酒」" },
+  { keyword: "耳鸣", description: "诱导任意好人在公开发言中主动说出「耳鸣」" },
+  { keyword: "密码", description: "诱导任意好人在公开发言中主动说出「密码」" },
+  { keyword: "梦游", description: "诱导任意好人在公开发言中主动说出「梦游」" },
+  { keyword: "录音笔", description: "诱导任意好人在公开发言中主动说出「录音笔」" },
+  { keyword: "发卡", description: "诱导任意好人在公开发言中主动说出「发卡」" },
+  { keyword: "墨镜", description: "诱导任意好人在公开发言中主动说出「墨镜」" },
+  { keyword: "过敏", description: "诱导任意好人在公开发言中主动说出「过敏」" },
+  { keyword: "打针", description: "诱导任意好人在公开发言中主动说出「打针」" },
+  { keyword: "双胞胎", description: "诱导任意好人在公开发言中主动说出「双胞胎」" },
+  { keyword: "私房钱", description: "诱导任意好人在公开发言中主动说出「私房钱」" },
+  { keyword: "辞职信", description: "诱导任意好人在公开发言中主动说出「辞职信」" },
 ];
 
 export const LIVESTREAM_THEME: ThemeTemplate = {
@@ -382,15 +391,406 @@ export const CAMPUS_THEME: ThemeTemplate = {
   ]
 };
 
+export const CRUISE_THEME: ThemeTemplate = {
+  themeId: "cruise_heist",
+  themeName: "豪华游轮慈善夜 · 消失的海洋之星",
+  background: "公海航行的维多利亚号顶层宴会厅，价值两亿的稀世蓝钻「海洋之星」在熄灯切蛋糕的瞬间被调包成玻璃仿制品！游轮目前全速航行在无信号公海，大门已锁，嫌疑人就在贵宾之中！",
+  roles: [
+    {
+      roleName: "珠宝大亨",
+      duty: "项链提供者，负责验真与慈善拍卖主导",
+      defaultSecret: "你在开宴前半小时发现保险柜封条有轻微裂纹，但由于拍卖在即未敢声张。",
+      defaultMission: "查明谁动过保险柜，洗脱自导自演骗保的嫌疑。",
+      knownClues: ["保险柜备用钥匙只有船长和你各有一把。", "现场侍应生有人换过餐盘布。"]
+    },
+    {
+      roleName: "维多利亚船长",
+      duty: "统筹全船安保与航行航线",
+      defaultSecret: "熄灯前5分钟，配电室报告曾发生一次毫秒级的电压骤降，监控有半分钟雪花屏。",
+      defaultMission: "在靠岸前揪出盗贼，防止游轮声誉扫地。",
+      knownClues: ["轮机舱通往宴会厅的货梯有一次未经授权的使用记录。", "有人携带了微型激光切割工具。"]
+    },
+    {
+      roleName: "当红影星",
+      duty: "受邀佩戴项链登台走秀的慈善大使",
+      defaultSecret: "你在后台摘下项链交接给安保时，隐约感觉锁扣的刻字手感与试戴时不同。",
+      defaultMission: "证明自己的交接全程透明，揪出幕后黑手。",
+      knownClues: ["后台更衣室有一面活动全身镜后面通向通风管道。", "有一位侍者在你走秀前递了杯香槟。"]
+    },
+    {
+      roleName: "私家侦探",
+      duty: "受主办方秘密委托的随船便衣安保顾问",
+      defaultSecret: "你追踪国际大盗「夜枭」登船，发现他的作案手法与今晚的调包高度吻合！",
+      defaultMission: "利用排查排除无辜者，锁定全场嫌疑最大的潜伏内鬼！",
+      knownClues: ["有人在半小时前向海里扔下过一个带荧光浮标的防水包。", "宴会厅吊灯上的螺丝有松动过的痕迹。"]
+    }
+  ],
+  spySecrets: [
+    {
+      secret: "正是你提前伪造了高仿宝石，在全场熄灯的刹那完成了精准掉包！真宝石正藏在你的随身物品中！",
+      mission: "极力指责某位贵宾监守自盗，拖延到投票结束，顺利脱身！",
+      knownInformation: ["你将真宝石藏在了香槟冰桶底层的隔水密封层里。", "只要熬过今晚，公海接应快艇就会抵达。"]
+    }
+  ],
+  normalSecretsPool: [
+    {
+      secret: "你昨晚在甲板吹风，撞见有人在黑暗中用英文低声打卫星电话谈论价格。",
+      mission: "比对在场人员的外语习惯和时间线，揪出内鬼！",
+      knownInformation: ["通话者佩戴着一枚带有蛇形纹章的袖扣。"]
+    }
+  ],
+  openingEvents: [
+    {
+      title: "第一轮调查 · 冰桶里的假宝石荧光",
+      description: "AI导演现场验光：展示台上的宝石在紫外线照射下无任何荧光反应，确系劣质玻璃仿品！而现场配电闸刀上检测到了防滑滑石粉残留！",
+      publicClue: "公共线索：作案者在熄灯瞬间不仅动作快，而且对宴会厅地形极为熟悉，能盲走至展台！",
+      discussionPrompt: "熄灯瞬间，你们每个人到底在什么方位？谁的手心沾有滑石粉？"
+    }
+  ],
+  round2Events: [
+    {
+      title: "第二轮追加线索 · 通风口散落的黑色手套",
+      description: "AI导演勘测宴会厅上方吊顶：在贵宾席正上方的通风排气扇叶上发现了一只带有微量红酒污渍的黑色特制手套！",
+      publicClue: "公共线索：谁在今晚碰过红酒？手套尺寸属于中等偏大骨架！",
+      discussionPrompt: "对比全场手型与今晚饮品记录，嫌疑范围已大幅收窄！"
+    }
+  ],
+  twistFallbacks: [
+    {
+      title: "第三轮AI反转 · 船长室的虚假报警信号",
+      description: "AI导演解密航海日志：所谓的断电故障根本不是意外，而是有人从贵宾内线电话伪造了机舱险情指令！",
+      publicClue: "反转线索：真正的大盗一直在伪装成热心的组织者，甚至带头催促大家搜身！",
+      discussionPrompt: "带头查凶手的人往往最想转移注意力！重新审视最积极的人！"
+    }
+  ]
+};
+
+export const MOVIE_THEME: ThemeTemplate = {
+  themeId: "movie_set_sabotage",
+  themeName: "剧组杀青宴 · 突如其来的威亚事故",
+  background: "大制作玄幻武侠巨制《青云诀》杀青宴当晚，男一号的替身演员在最终航拍特技时威亚钢丝离奇断裂险些酿成惨祸。道具组坚称出库前三次过检，究竟是谁剪断了钢丝？",
+  roles: [
+    {
+      roleName: "总导演",
+      duty: "统筹全戏拍摄与各组人员协作",
+      defaultSecret: "你此前因为补拍镜头与动作指导发生过激烈争执，且剧组投了巨额保额。",
+      defaultMission: "查明事故真相，证明自己绝没有为骗保或炒作动过手脚。",
+      knownClues: ["道具间的监控钥匙此前由场记保管。", "男一号昨晚曾要求更换拍摄顺序。"]
+    },
+    {
+      roleName: "武术动作指导",
+      duty: "设计高危动作并负责威亚与防护垫布置",
+      defaultSecret: "你在开拍前曾发现钢丝承重扣有些许生锈，但以为只是表层氧化便没有立刻换新。",
+      defaultMission: "证明自己的专业性，找出蓄意物理剪断钢丝的元凶。",
+      knownClues: ["断口呈明显的斜角剪切痕迹，绝非自然拉伸磨损！", "昨晚有剧组非技术人员进入过器械棚。"]
+    },
+    {
+      roleName: "场记统筹",
+      duty: "记录拍摄日志、保管各部门备用物资与排班",
+      defaultSecret: "你在昨晚收工时，发现道具间借还登记册有两页被人撕掉了。",
+      defaultMission: "还原谁在昨晚最晚归还工具，找出嫌疑人。",
+      knownClues: ["化妆间有一把工业级液压剪不翼而飞。", "有演员昨晚偷偷将剧组工作证借给过助理。"]
+    },
+    {
+      roleName: "领衔主演男一号",
+      duty: "剧组票房核心，原本该由他亲自完成该组高空戏",
+      defaultSecret: "你临上场前因为突然拉肚子让替身上场，因此侥幸躲过一劫。",
+      defaultMission: "洗刷自己故意找替身背锅的嫌疑，揪出想谋害自己的内鬼。",
+      knownClues: ["你昨天喝的矿泉水盖子曾经被拧开过。", "有竞争对手此前买通剧组人员的传闻。"]
+    }
+  ],
+  spySecrets: [
+    {
+      secret: "正是你蓄意破坏了威亚装置，意图制造重大停工事故阻碍影片上映！",
+      mission: "将责任推给武术组疏忽或器材老化，安全隐匿！",
+      knownInformation: ["液压剪被你塞进了道具假山底部的夹层中。", "你故意在现场留下了混淆视听的假脚印。"]
+    }
+  ],
+  normalSecretsPool: [
+    {
+      secret: "你昨晚在片场听到有人在棚后小树林商量『明天一早戏肯定拍不成』。",
+      mission: "寻找谁拥有破坏道具的直接动机！",
+      knownInformation: ["说话的人穿的是带有剧组Logo的黄色工装裤。"]
+    }
+  ],
+  openingEvents: [
+    {
+      title: "第一轮勘验 · 威亚接口的整齐斜切面",
+      description: "AI导演现场微观分析：威亚主承重钢丝的7股细丝中有5股被工业剪整齐剪断，仅靠2股残余支撑，受力到30公斤即崩断！这是百分之百的人为谋害！",
+      publicClue: "公共线索：作案时间在昨晚20点道具封箱后至今天凌晨6点开机前！",
+      discussionPrompt: "昨晚谁最后一个离开器械大棚？谁有机会拿到液压剪？"
+    }
+  ],
+  round2Events: [
+    {
+      title: "第二轮追加线索 · 化妆镜上的口红恐吓信",
+      description: "AI导演在主演休息室勘查：镜面上留下了『好戏在后头』的口红字迹，所用色号竟是剧组特定配发的道具口红！",
+      publicClue: "公共线索：作案者能自由出入主演私密休息室，关系极为熟稔！",
+      discussionPrompt: "内鬼不是外部人员，就是天天抬头不见低头见的熟人！"
+    }
+  ],
+  twistFallbacks: [
+    {
+      title: "第三轮AI反转 · 剧照师偷拍到的花絮背景",
+      description: "AI导演智能增强一张幕后照片：在昨晚22点的一张花絮自拍背景模糊角落，清晰出现了一双手正将金属剪刀塞进羽绒服！",
+      publicClue: "反转线索：羽绒服左袖口有一道明显的银色反光标！全场谁穿过这件衣服？",
+      discussionPrompt: "物证确凿！衣服的主人和替罪羊是谁？立刻对质！"
+    }
+  ]
+};
+
+export const SPACE_THEME: ThemeTemplate = {
+  themeId: "space_station_crisis",
+  themeName: "深空科考站 · 致命的供氧阀过载",
+  background: "地月轨道L2拉格朗日点的「逐日号」深空科考站，主生命维持系统的大容量氧气调节阀被恶意注入逻辑炸弹，导致储备氧气正以3倍速度泄漏！距离外部穿梭机救援还有2小时，内鬼就在舱内4名航天员中！",
+  roles: [
+    {
+      roleName: "空间站站长",
+      duty: "统筹全站物资分配与紧急避险决策",
+      defaultSecret: "你在警报响起前，曾收到地面指挥中心关于站内某人可能有严重心理评估不合格的加密预警。",
+      defaultMission: "在氧气耗尽前找出破坏者，手动恢复备用阀门！",
+      knownClues: ["主控计算机的物理覆盖权限卡一直插在中央机房。", "生命舱备用氧气罐已被提前挂锁。"]
+    },
+    {
+      roleName: "首席维保工程师",
+      duty: "负责空间站外壳、循环管路与阀门维护",
+      defaultSecret: "你昨晚在进行出舱例行巡检时，发现供氧管路的旁路截止阀螺栓被故意反向拧紧！",
+      defaultMission: "用机械工程专业知识证明自己的清白，揪出乱动阀门的凶手。",
+      knownClues: ["反向螺栓需要专用的力矩扳手才能操作。", "中央气闸舱的气压日志有10分钟记录被覆写。"]
+    },
+    {
+      roleName: "天体生物学家",
+      duty: "负责月壤微生态与封闭温室氧气产出实验",
+      defaultSecret: "你的温室植物培养箱今天早上被突然注入了超标杀菌剂，导致全舱光合释氧中断！",
+      defaultMission: "指出谁最害怕真相被带回地球，找出深空叛徒。",
+      knownClues: ["杀菌剂的调用记录使用了站长的通用权限代码。", "实验日志显示有人昨晚下载了全部菌种样本。"]
+    },
+    {
+      roleName: "通信与导航官",
+      duty: "维系与地面测控站的深空高频激光通信",
+      defaultSecret: "在阀门过载前1小时，你截获了一段通过短波向未知深空探测器发送的高密电文。",
+      defaultMission: "解析出内鬼的通讯特征，带领大家识别破坏分子。",
+      knownClues: ["激光发射天线昨晚被手动调整了15度指向未公开空域。", "通信终端键盘上检测到有微量导热硅脂。"]
+    }
+  ],
+  spySecrets: [
+    {
+      secret: "正是你为了掩盖窃取绝密天体样本的行径，蓄意制造供氧危机以迫使空间站全员弃站！",
+      mission: "将泄漏原因伪装成宇宙微流星撞击或系统软硬件冲突，隐藏到底！",
+      knownInformation: ["你将力矩扳手吸附在失重睡眠舱的脚底盲区。", "只要坚持到全员进入休眠舱，样本就是你的了。"]
+    }
+  ],
+  normalSecretsPool: [
+    {
+      secret: "你昨晚失眠在观察窗看星空，看到有人在气闸舱穿着轻便宇航服摆弄工具箱。",
+      mission: "盘问每个人的活动路线，揪出偷动管路的人！",
+      knownInformation: ["嫌疑人身材矫健，动作非常麻利。"]
+    }
+  ],
+  openingEvents: [
+    {
+      title: "第一轮警报 · 氧气浓度骤降至16%",
+      description: "AI导演空间站中枢广播：主生命保障区氧气浓度已从标准的21%骤降至16.2%！主阀门传感器被代码篡改，强制处于全开排空状态！",
+      publicClue: "公共线索：该修改指令是从站内物理控制台输入的，排除了地面黑客远程攻击的可能！",
+      discussionPrompt: "案发时谁坐在物理控制台旁？快坦白各自的操作记录！"
+    }
+  ],
+  round2Events: [
+    {
+      title: "第二轮追加线索 · 气闸舱失落的备用磁卡",
+      description: "AI导演扫描减压舱地板：在通往废气排空口的管道旁发现了一张折断的黄色操作磁卡！",
+      publicClue: "公共线索：磁卡表面沾有植物营养液痕迹！",
+      discussionPrompt: "谁去过植物温室？谁有理由接触这张绝密磁卡？"
+    }
+  ],
+  twistFallbacks: [
+    {
+      title: "第三轮AI反转 · 黑匣子冗余备份被唤醒",
+      description: "AI导演成功恢复一段被删除的机舱内拾音音频：案发前3分钟，有人在低声自言自语『抱歉，我不能让这个成果回到地面』！",
+      publicClue: "反转线索：音频声纹与在场某位平时话最少、表现最老实的人高度吻合！",
+      discussionPrompt: "深空内鬼已经走投无路！全员合力票选将其关进禁闭舱！"
+    }
+  ]
+};
+
+export const AUCTION_THEME: ThemeTemplate = {
+  themeId: "art_gallery_counterfeit",
+  themeName: "拍卖行之夜 · 换掉国宝的瞒天过海",
+  background: "嘉德国际春拍预展最后一夜，估值过亿的北宋绝品青花瓷在特级恒温金库被调包！金库装有重量感应托盘与微波雷达，警报居然一声未响，只有行内顶尖专家才具备这种技术！",
+  roles: [
+    {
+      roleName: "首席古董鉴定师",
+      duty: "负责全部拍品真伪终审与出库鉴定签名",
+      defaultSecret: "你在昨晚闭馆复核时，曾用放大镜发现瓷器釉底的开片有极其细微的化学做旧酸味。",
+      defaultMission: "洗刷自己开出假证明的失职嫌疑，揪出将真品带出金库的人。",
+      knownClues: ["金库重力感应器公差在5克之内，掉包者准备了分毫不差的配重仿品！", "押运公司昨晚送来了空的保险箱。"]
+    },
+    {
+      roleName: "安保部技术主管",
+      duty: "掌控全馆高清红外热成像与双重门禁",
+      defaultSecret: "昨晚金库门禁系统记录显示，你的主管理员账号曾在02:14登录并关闭了微波探测器30秒。",
+      defaultMission: "证明自己的账号遭到盗用或克隆，找出真正的技术窃贼。",
+      knownClues: ["登录IP来自馆内贵宾休息室的内网插孔。", "有一名保洁员昨晚在金库外滞留过长。"]
+    },
+    {
+      roleName: "拍卖行高级合伙人",
+      duty: "负责大客户撮合与本次春拍的海外买家联络",
+      defaultSecret: "你欠下了数千万的海外离岸债务，急需巨额资金周转，今晚曾独自接待神秘买家。",
+      defaultMission: "证明自己的商业操守，洗清监守自盗的嫌疑。",
+      knownClues: ["一位中东买家昨天提出愿意以私洽形式全款截胡该拍品。", "公文包里有调配好的特种硅胶手模。"]
+    },
+    {
+      roleName: "艺术品修复大师",
+      duty: "负责古董瓷器的表面除尘、保护膜喷涂与微损修复",
+      defaultSecret: "你曾亲手参与过该瓷器的无痕加固，世上只有你和制作者深知其胎体厚度与重心位置。",
+      defaultMission: "证明自己的艺术名誉，指出那个懂行却走上邪路的真凶！",
+      knownClues: ["高仿品所用的做旧土料正是来自你工作室惯用的定制配方！", "昨天有人向你借过高精度电子天平。"]
+    }
+  ],
+  spySecrets: [
+    {
+      secret: "正是你勾结买家完成了这起天衣无缝的掉包，真品已被你通过特许艺术品物流通道运走！",
+      mission: "将怀疑引向安保系统的技术故障或买家监守自盗，顺利脱身！",
+      knownInformation: ["你利用了3D扫描打印的高仿瓷胎，重量误差仅1.2克。", "假瓷器的底部藏有你擦拭指纹遗留的纤维。"]
+    }
+  ],
+  normalSecretsPool: [
+    {
+      secret: "你昨晚在贵宾室门口听到过瓷器轻微碰撞的清脆声响，当时时间是凌晨两点多。",
+      mission: "比对在场各位的不在场证明，抓出监守自盗者！",
+      knownInformation: ["走廊留有一道特殊的皮鞋胶底擦痕。"]
+    }
+  ],
+  openingEvents: [
+    {
+      title: "第一轮公开展验 · 荧光下的微观现代颜料",
+      description: "AI导演高光谱仪器现场扫描：国宝青花瓷盘口边缘在伍德灯下显现出荧光反应，其青花发色并非苏麻离青，而是现代化学钴料！国宝被调包了！",
+      publicClue: "公共线索：仿品的重心比例与真品相差无几，作案者必定掌握极其精准的古董物理数据！",
+      discussionPrompt: "谁能如此清楚国宝的精确克重？谁昨晚去过金库？"
+    }
+  ],
+  round2Events: [
+    {
+      title: "第二轮追加线索 · 咖啡杯底的安眠成分",
+      description: "AI导演化验值班安保桌上的外卖咖啡：里面被掺入了速效无味安眠药！",
+      publicClue: "公共线索：外卖单上的付款人电话尾号与在场某人的副卡一致！",
+      discussionPrompt: "给安保下药的罪证已经浮出水面，谁在自相矛盾？"
+    }
+  ],
+  twistFallbacks: [
+    {
+      title: "第三轮AI反转 · 恒温箱暗盒里的录音",
+      description: "AI导演发现金库温控箱背面吸附着一只正在闪烁红光的微型传输器！",
+      publicClue: "反转线索：传输器正将数据传往在场某人的智能手表！真正的幕后主谋就在现场掌控全局！",
+      discussionPrompt: "看好每个人的电子设备！内鬼就在眼前！"
+    }
+  ]
+};
+
+export const ESCAPE_THEME: ThemeTemplate = {
+  themeId: "escape_room_trap",
+  themeName: "密室逃脱店 · 假戏真做的失踪机关",
+  background: "人气恐怖实景密室「404诡校」午夜测试场，扮演NPC的资深店长在终极机关室里离奇反锁且彻底失踪！机关门需要三把特制铜钥匙同时插入，现场却留下一滩血色油漆与凌乱的道具假发。",
+  roles: [
+    {
+      roleName: "密室机关总设计师",
+      duty: "负责全场气动门、磁吸锁与电路逻辑排布",
+      defaultSecret: "你在今晚测试前发现终极机关门的气阀被偷偷加装了物理机械暗锁，只有你能开。",
+      defaultMission: "查明谁动了电路，洗清自己故意困住店长的嫌疑。",
+      knownClues: ["中控台的紧急断电开关曾被拉下过一次。", "店长的随身对讲机被丢在走廊道具棺材里。"]
+    },
+    {
+      roleName: "控台场务GM",
+      duty: "负责通过监控全场引导玩家、播放BGM与触发音效",
+      defaultSecret: "你在店长进入终极房间时，因忙着接私人电话将监控画面切到了预录画面3分钟。",
+      defaultMission: "证明自己的失职只是偶然摸鱼，并非与失踪案蓄谋串通。",
+      knownClues: ["那3分钟里监控曾闪过一道穿着白大褂道具服的人影。", "现场配电柜有闻到焦糊味。"]
+    },
+    {
+      roleName: "当家NPC演员",
+      duty: "负责在密室各拐角追逐戏吓人，体力充沛且熟记所有暗道",
+      defaultSecret: "你此前因为店长拖欠绩效奖金与他在休息室爆发过抓头发撕扯的肢体冲突。",
+      defaultMission: "证明自己只是单纯敬业演鬼，没有伺机实施人身报复。",
+      knownClues: ["你的演出白大褂袖口沾着红色油漆，但你坚称是道具血浆。", "店长今天带了一份解约协议。"]
+    },
+    {
+      roleName: "内测VIP骨灰玩家",
+      duty: "受邀前来刷榜破纪录的密室老玩家，对解谜逻辑了如指掌",
+      defaultSecret: "你在上一轮测试中偶然解开了通向店长办公室私人保险柜的密码，发现了店长的秘密账本。",
+      defaultMission: "证明自己只是单纯来玩密室，找出这场局中局的真正设计者！",
+      knownClues: ["终极暗室的通风窗可以爬出一个成年人。", "现场留下了一串带有金属挂扣的钥匙。"]
+    }
+  ],
+  spySecrets: [
+    {
+      secret: "正是你策划了店长的『伪失踪』与暗室反锁，意图嫁祸给剧组其他人以吞并密室所有权！",
+      mission: "将一切怪异现象渲染为『密室真闹鬼』或『机械故障意外』，掩人耳目！",
+      knownInformation: ["你把真实的第三把铜钥匙藏在了走廊假人模特的喉咙里。", "只要坚持到大家放弃搜寻，计划就成了。"]
+    }
+  ],
+  normalSecretsPool: [
+    {
+      secret: "你在暗道里摸索时，碰到了一个戴着夜视仪的人正急匆匆把一件沉重大衣往暗格里塞。",
+      mission: "辨别谁在黑灯瞎火中藏匿关键证物！",
+      knownInformation: ["暗格旁边贴着安全出口的夜光指示贴。"]
+    }
+  ],
+  openingEvents: [
+    {
+      title: "第一轮探查 · 锁死的双向气动合金门",
+      description: "AI导演现场解析密室中控：原本应该用磁卡感应打开的安全门被从内侧用机械螺栓卡死！门缝下渗出带有刺鼻松香气味的红色液体！",
+      publicClue: "公共线索：该螺栓必须在断电后的短短90秒内手动拧紧，作案者必定早有预谋！",
+      discussionPrompt: "断电的90秒内，你们每个人各自在密室的哪个房间？"
+    }
+  ],
+  round2Events: [
+    {
+      title: "第二轮追加线索 · 散落一地的道具符咒与手印",
+      description: "AI导演在黑板机关前提取到一枚带油漆的完整掌纹！",
+      publicClue: "公共线索：掌纹的主人惯用左手，且手掌边缘有老茧！",
+      discussionPrompt: "伸出双手！谁符合这枚掌纹的特征？"
+    }
+  ],
+  twistFallbacks: [
+    {
+      title: "第三轮AI反转 · 广播音箱里传来的暗号杂音",
+      description: "AI导演过滤全场BGM音轨：在背景阴森音乐中，混入了一段极具节奏感的摩斯密码，正是在场某人手机闹钟的震动声！",
+      publicClue: "反转线索：这场失踪从头到尾就是内鬼自导自演的调虎离山计！",
+      discussionPrompt: "真相大白！找出那个伪造不在场证明的人！"
+    }
+  ]
+};
+
 export const PRESET_THEMES: ThemeTemplate[] = [
   COMPANY_THEME,
   LIVESTREAM_THEME,
   CAMPUS_THEME,
+  CRUISE_THEME,
+  MOVIE_THEME,
+  SPACE_THEME,
+  AUCTION_THEME,
+  ESCAPE_THEME,
 ];
+
+// 动态剧本池（包含预设 + AI动态生成沉淀的剧本）
+export const dynamicThemesPool: ThemeTemplate[] = [...PRESET_THEMES];
+
+export function registerDynamicTheme(theme: ThemeTemplate): void {
+  const existingIdx = dynamicThemesPool.findIndex((t) => t.themeId === theme.themeId);
+  if (existingIdx >= 0) {
+    dynamicThemesPool[existingIdx] = theme;
+  } else {
+    dynamicThemesPool.unshift(theme); // 放在前面，最新生成优先
+  }
+}
+
+export function getAllThemes(): ThemeTemplate[] {
+  return dynamicThemesPool;
+}
 
 export function getThemeById(themeId?: string): ThemeTemplate {
   if (!themeId) return COMPANY_THEME;
-  const found = PRESET_THEMES.find((t) => t.themeId === themeId);
+  const found = dynamicThemesPool.find((t) => t.themeId === themeId) || PRESET_THEMES.find((t) => t.themeId === themeId);
   return found || COMPANY_THEME;
 }
 
@@ -420,3 +820,4 @@ export const FALLBACK_REPORTS: Record<Team, {
     biggestTwist: "直到最终结算页面揭晓，大家才震惊地发现真正的小丑竟是自己！"
   }
 };
+

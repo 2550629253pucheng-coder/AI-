@@ -13,10 +13,21 @@ import {
   ErrorCode,
   TrapMission,
   RoomVoiceMessage,
+  AIDirectorComment,
 } from "../src/types/game.js";
-import { COMPANY_THEME, ThemeTemplate, getThemeById, getRandomTrapMission } from "./templates.js";
+import {
+  COMPANY_THEME,
+  ThemeTemplate,
+  getThemeById,
+  getRandomTrapMission,
+  getAllThemes,
+  registerDynamicTheme,
+  PRESET_THEMES,
+} from "./templates.js";
 import { AIGateway } from "./aiGateway.js";
 import { playerIdOf } from "./auth.js";
+import { SQLiteStore } from "./db.js";
+import { WebSocketManager } from "./ws.js";
 
 /**
  * 服务端内部对局状态，携带隐藏身份。绝不下发客户端。
@@ -25,10 +36,9 @@ export interface ServerGame extends Game {
   spyPlayerIds: string[];
 }
 
-// 内存数据库 (满足 MVP 高性能与实时性要求)
+// 内存索引（从 SQLite 加载，支持极致毫秒级读写 + 异步持久化）
 export const rooms = new Map<string, Room>();
 export const games = new Map<string, ServerGame>();
-// 私密秘密表：gameId -> Map<playerId, PlayerSecret> (强权限隔离，绝不流入公共状态)
 export const playerSecrets = new Map<string, Map<string, PlayerSecret>>();
 
 /**
@@ -65,10 +75,20 @@ export function shuffle<T>(arr: readonly T[]): T[] {
 export class GameEngine {
   private static instance: GameEngine;
   private aiGateway: AIGateway;
+  private store: SQLiteStore;
+  private ws: WebSocketManager;
   private advancing = new Set<string>();
+  private autoTimerStarted = false;
 
   private constructor() {
     this.aiGateway = AIGateway.getInstance();
+    this.store = SQLiteStore.getInstance();
+    this.ws = WebSocketManager.getInstance();
+
+    // 初始化 SQLite 数据恢复
+    this.initDatabase();
+    // 启动自动推进定时器（避免房主当人肉时钟）
+    this.startAutoAdvanceTimer();
   }
 
   public static getInstance(): GameEngine {
@@ -78,12 +98,90 @@ export class GameEngine {
     return GameEngine.instance;
   }
 
+  private async initDatabase() {
+    try {
+      await this.store.init();
+      // 从 SQLite 恢复房间和游戏
+      const savedRooms = this.store.getAllRooms();
+      for (const r of savedRooms) {
+        // 只保留近 24 小时内的活动房间
+        if (Date.now() - r.createdAt < 24 * 3600 * 1000) {
+          rooms.set(r.roomId, r);
+          if (r.currentGameId) {
+            const g = this.store.getGame(r.currentGameId) as ServerGame | null;
+            if (g) {
+              games.set(g.gameId, g);
+              // 恢复 secrets
+              const secretsMap = new Map<string, PlayerSecret>();
+              for (const p of r.players) {
+                const s = this.store.getSecret(g.gameId, p.playerId);
+                if (s) secretsMap.set(p.playerId, s);
+              }
+              playerSecrets.set(g.gameId, secretsMap);
+            }
+          }
+        }
+      }
+      // 恢复自定义剧本
+      const customThemes = this.store.getAllCustomThemes();
+      for (const t of customThemes) {
+        registerDynamicTheme(t);
+      }
+      console.log(`[GameEngine] SQLite state restored: ${rooms.size} rooms, ${customThemes.length} custom themes`);
+    } catch (e) {
+      console.error("[GameEngine] Database init failed:", e);
+    }
+  }
+
+  private broadcast(roomId: string) {
+    const room = rooms.get(roomId);
+    if (!room) return;
+    const game = room.currentGameId ? games.get(room.currentGameId) : undefined;
+    this.ws.broadcastToRoom(roomId, {
+      type: "ROOM_STATE",
+      room,
+      game: toPublicGame(game),
+    });
+  }
+
+  /**
+   * 自动推进定时器：每秒轮询，一旦倒计时到达服务端 phaseEndsAt，全自动平滑推向下一阶段
+   * 彻底告别“房主当人肉时钟”
+   */
+  private startAutoAdvanceTimer() {
+    if (this.autoTimerStarted) return;
+    this.autoTimerStarted = true;
+
+    setInterval(async () => {
+      const now = Date.now();
+      for (const [gameId, game] of games.entries()) {
+        if (
+          game.phase === GamePhase.LOBBY ||
+          game.phase === GamePhase.RESULT ||
+          game.phase === GamePhase.FINISHED ||
+          game.phase === GamePhase.SETTLEMENT
+        ) {
+          continue;
+        }
+
+        // 倒计时已到，自动推进
+        if (now >= game.phaseEndsAt && !this.advancing.has(gameId)) {
+          console.log(`[AutoAdvance] Phase ${game.phase} time expired for game ${gameId}, advancing...`);
+          try {
+            await this.advancePhaseInternal(gameId);
+          } catch (err) {
+            console.error(`[AutoAdvance] Failed to advance game ${gameId}:`, err);
+          }
+        }
+      }
+    }, 1000);
+  }
+
   // --- 房间管理 ---
 
   public createRoom(user: { openid: string; nickname: string; avatarUrl: string }): Room {
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     let roomCode = generateRoomCode();
-    // 确保 code 唯一
     while (Array.from(rooms.values()).some((r) => r.roomCode === roomCode)) {
       roomCode = generateRoomCode();
     }
@@ -100,32 +198,155 @@ export class GameEngine {
       online: true,
       joinedAt: Date.now(),
       lastSeenAt: Date.now(),
+      voteCount: 0,
+      isEliminated: false,
     };
 
     const room: Room = {
       roomId,
       roomCode,
-      ownerId: owner.playerId,
+      ownerId,
       status: "WAITING",
       minPlayers: 4,
       maxPlayers: 8,
       themeId: COMPANY_THEME.themeId,
       themeName: COMPANY_THEME.themeName,
       themeBackground: COMPANY_THEME.background,
-      customTheme: COMPANY_THEME,
       createdAt: Date.now(),
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+      expiresAt: Date.now() + 2 * 3600 * 1000,
       players: [owner],
       voiceMessages: [],
     };
 
     rooms.set(roomId, room);
+    this.store.saveRoom(room);
     return room;
   }
 
-  /**
-   * 房主更换或定制房间剧本 (Custom Scenario)
-   */
+  public joinRoom(
+    roomCode: string,
+    user: { openid: string; nickname: string; avatarUrl: string }
+  ): { room: Room; game?: Game } {
+    const room = Array.from(rooms.values()).find((r) => r.roomCode === roomCode);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+    if (room.status !== "WAITING") throw new Error(ErrorCode.INVALID_GAME_STATE);
+
+    const playerId = playerIdOf(user.openid);
+    let player = room.players.find((p) => p.playerId === playerId);
+
+    if (player) {
+      player.online = true;
+      player.lastSeenAt = Date.now();
+      player.nickname = user.nickname || player.nickname;
+      player.avatarUrl = user.avatarUrl || player.avatarUrl;
+    } else {
+      if (room.players.length >= room.maxPlayers) {
+        throw new Error(ErrorCode.ROOM_FULL);
+      }
+      player = {
+        playerId,
+        roomId: room.roomId,
+        openid: user.openid,
+        nickname: user.nickname,
+        avatarUrl: user.avatarUrl || "https://api.dicebear.com/7.x/personas/svg?seed=" + user.nickname,
+        isOwner: false,
+        isReady: false,
+        online: true,
+        joinedAt: Date.now(),
+        lastSeenAt: Date.now(),
+        voteCount: 0,
+        isEliminated: false,
+      };
+      room.players.push(player);
+    }
+
+    this.store.saveRoom(room);
+    this.broadcast(room.roomId);
+    const game = room.currentGameId ? games.get(room.currentGameId) : undefined;
+    return { room, game: toPublicGame(game) };
+  }
+
+  public leaveRoom(roomId: string, playerId: string): Room {
+    const room = rooms.get(roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+
+    const idx = room.players.findIndex((p) => p.playerId === playerId);
+    if (idx !== -1) {
+      const removed = room.players.splice(idx, 1)[0];
+      if (removed.isOwner && room.players.length > 0) {
+        room.players[0].isOwner = true;
+        room.players[0].isReady = true;
+        room.ownerId = room.players[0].playerId;
+      }
+    }
+
+    if (room.players.length === 0) {
+      rooms.delete(roomId);
+    } else {
+      this.store.saveRoom(room);
+      this.broadcast(roomId);
+    }
+    return room;
+  }
+
+  public setReady(roomId: string, playerId: string, isReady: boolean): Room {
+    const room = rooms.get(roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+
+    const player = room.players.find((p) => p.playerId === playerId);
+    if (!player) throw new Error(ErrorCode.UNAUTHORIZED);
+
+    player.isReady = isReady;
+    player.lastSeenAt = Date.now();
+    this.store.saveRoom(room);
+    this.broadcast(roomId);
+    return room;
+  }
+
+  public addBotPlayers(roomId: string, count: number = 6): Room {
+    const room = rooms.get(roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+    if (room.status !== "WAITING") throw new Error(ErrorCode.INVALID_GAME_STATE);
+
+    const botNames = [
+      "柯南探长",
+      "卷王程序猿",
+      "奶茶狂热者",
+      "摸鱼大师",
+      "绝命反水王",
+      "气氛组课代表",
+      "法医小助手",
+      "暗夜魔术师",
+    ];
+
+    const currentCount = room.players.length;
+    const toAdd = Math.min(count - currentCount, room.maxPlayers - currentCount);
+
+    for (let i = 0; i < toAdd; i++) {
+      const name = botNames[(currentCount + i) % botNames.length];
+      const botId = `bot_${Date.now()}_${i}`;
+      room.players.push({
+        playerId: botId,
+        roomId,
+        openid: `bot_openid_${botId}`,
+        nickname: `${name}`,
+        avatarUrl: `https://api.dicebear.com/7.x/personas/svg?seed=${name}_${i}`,
+        isOwner: false,
+        isReady: true,
+        online: true,
+        isBot: true,
+        joinedAt: Date.now(),
+        lastSeenAt: Date.now(),
+        voteCount: 0,
+        isEliminated: false,
+      });
+    }
+
+    this.store.saveRoom(room);
+    this.broadcast(roomId);
+    return room;
+  }
+
   public setRoomTheme(roomId: string, theme: ThemeTemplate, requesterId: string): Room {
     const room = rooms.get(roomId);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
@@ -136,212 +357,77 @@ export class GameEngine {
     room.themeName = theme.themeName;
     room.themeBackground = theme.background;
     room.customTheme = theme;
-    return room;
-  }
 
-  public joinRoom(
-    roomCode: string,
-    user: { openid: string; nickname: string; avatarUrl: string }
-  ): { room: Room; player: RoomPlayer } {
-    const room = Array.from(rooms.values()).find((r) => r.roomCode === roomCode.trim());
-    if (!room) {
-      throw new Error(ErrorCode.ROOM_NOT_FOUND);
-    }
-    if (room.status !== "WAITING" && room.status !== "PLAYING") {
-      throw new Error(ErrorCode.ROOM_EXPIRED);
-    }
-
-    const playerId = playerIdOf(user.openid);
-    const existing = room.players.find((p) => p.playerId === playerId || p.openid === user.openid);
-
-    if (existing) {
-      existing.online = true;
-      existing.lastSeenAt = Date.now();
-      existing.nickname = user.nickname || existing.nickname;
-      return { room, player: existing };
-    }
-
-    if (room.status === "PLAYING") {
-      throw new Error(ErrorCode.INVALID_GAME_STATE);
-    }
-
-    if (room.players.length >= room.maxPlayers) {
-      throw new Error(ErrorCode.ROOM_FULL);
-    }
-
-    const newPlayer: RoomPlayer = {
-      playerId,
-      roomId: room.roomId,
-      openid: user.openid,
-      nickname: user.nickname,
-      avatarUrl: user.avatarUrl || "https://api.dicebear.com/7.x/personas/svg?seed=" + user.nickname,
-      isOwner: false,
-      isReady: false,
-      online: true,
-      joinedAt: Date.now(),
-      lastSeenAt: Date.now(),
-    };
-
-    room.players.push(newPlayer);
-    return { room, player: newPlayer };
-  }
-
-  public leaveRoom(roomId: string, playerId: string): Room {
-    const room = rooms.get(roomId);
-    if (!room) {
-      throw new Error(ErrorCode.ROOM_NOT_FOUND);
-    }
-
-    if (room.status === "WAITING") {
-      room.players = room.players.filter((p) => p.playerId !== playerId);
-      if (room.players.length === 0) {
-        rooms.delete(roomId);
-        return room;
-      }
-      if (room.ownerId === playerId) {
-        // 房主转移给最早进入的真人玩家或任意玩家
-        const nextOwner = room.players.find((p) => !p.isBot) || room.players[0];
-        nextOwner.isOwner = true;
-        nextOwner.isReady = true;
-        room.ownerId = nextOwner.playerId;
-      }
-    } else {
-      // 游戏中标记掉线
-      const p = room.players.find((item) => item.playerId === playerId);
-      if (p) {
-        p.online = false;
-        p.lastSeenAt = Date.now();
-      }
-    }
-
-    return room;
-  }
-
-  public setReady(roomId: string, playerId: string, isReady: boolean): Room {
-    const room = rooms.get(roomId);
-    if (!room) {
-      throw new Error(ErrorCode.ROOM_NOT_FOUND);
-    }
-    const p = room.players.find((item) => item.playerId === playerId);
-    if (!p) {
-      throw new Error(ErrorCode.UNAUTHORIZED);
-    }
-    if (p.isOwner) {
-      p.isReady = true; // 房主始终默认准备好
-    } else {
-      p.isReady = isReady;
-    }
-    return room;
-  }
-
-  /**
-   * 快速填充测试玩家 (机器人好友)，方便单人测试或凑齐4-6人开局
-   */
-  public addBotPlayers(roomId: string, countNeeded: number = 6): Room {
-    const room = rooms.get(roomId);
-    if (!room) {
-      throw new Error(ErrorCode.ROOM_NOT_FOUND);
-    }
-    const currentCount = room.players.length;
-    const toAdd = Math.min(countNeeded - currentCount, room.maxPlayers - currentCount);
-
-    const botNames = ["小王(财务)", "阿杰(程序员)", "七喜(HR)", "大明(销售)", "佳佳(行政)", "晨晨(实习生)"];
-
-    for (let i = 0; i < toAdd; i++) {
-      const idx = (currentCount + i) % botNames.length;
-      const botId = `bot_${Date.now()}_${i}`;
-      const botPlayer: RoomPlayer = {
-        playerId: botId,
-        roomId: room.roomId,
-        openid: `openid_${botId}`,
-        nickname: botNames[idx],
-        avatarUrl: `https://api.dicebear.com/7.x/personas/svg?seed=${botNames[idx]}`,
-        isOwner: false,
-        isReady: true,
-        online: true,
-        isBot: true,
-        joinedAt: Date.now(),
-        lastSeenAt: Date.now(),
-      };
-      room.players.push(botPlayer);
-    }
+    registerDynamicTheme(theme);
+    this.store.saveTheme(theme);
+    this.store.saveRoom(room);
+    this.broadcast(roomId);
     return room;
   }
 
   public getRoom(roomId: string): { room: Room; game?: Game } {
     const room = rooms.get(roomId);
-    if (!room) {
-      throw new Error(ErrorCode.ROOM_NOT_FOUND);
-    }
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
     const game = room.currentGameId ? games.get(room.currentGameId) : undefined;
     return { room, game: toPublicGame(game) };
   }
 
-  public getRoomByCode(roomCode: string): { room: Room; game?: Game } {
-    const room = Array.from(rooms.values()).find((r) => r.roomCode === roomCode.trim());
-    if (!room) {
-      throw new Error(ErrorCode.ROOM_NOT_FOUND);
-    }
+  public getRoomByCode(code: string): { room: Room; game?: Game } {
+    const room = Array.from(rooms.values()).find((r) => r.roomCode === code);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
     const game = room.currentGameId ? games.get(room.currentGameId) : undefined;
     return { room, game: toPublicGame(game) };
   }
 
-  // --- 游戏引擎核心流程 ---
+  // --- 游戏主循环 ---
 
-  /**
-   * 房主发起开始游戏 (P0 安全：服务端洗牌与分配身份)
-   */
-  public startGame(roomId: string, ownerId: string): { room: Room; game: Game } {
+  public startGame(roomId: string, requesterId: string): { room: Room; game: Game } {
     const room = rooms.get(roomId);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
-    if (room.ownerId !== ownerId) throw new Error(ErrorCode.NOT_ROOM_OWNER);
-    if (room.players.length < room.minPlayers) throw new Error(ErrorCode.NOT_ENOUGH_PLAYERS);
+    if (room.ownerId !== requesterId) throw new Error(ErrorCode.NOT_ROOM_OWNER);
 
-    // 检查所有非房主玩家是否已准备
-    const unready = room.players.filter((p) => !p.isOwner && !p.isReady);
-    if (unready.length > 0) {
+    if (room.players.length < room.minPlayers) {
+      throw new Error(ErrorCode.NOT_ENOUGH_PLAYERS);
+    }
+    const unready = room.players.find((p) => !p.isReady);
+    if (unready) {
       throw new Error(ErrorCode.PLAYER_NOT_READY);
     }
 
-    const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const template: ThemeTemplate = room.customTheme || getThemeById(room.themeId);
+    const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    // 随机分配角色与内鬼身份 (Fisher-Yates 算法)
-    const playerCount = room.players.length;
-    const spyCount = playerCount >= 8 ? 2 : 1;
+    // 内鬼数量分配：>= 6 人时支持 2 名内鬼，增加对抗激烈度
+    const totalPlayers = room.players.length;
+    const spyCount = totalPlayers >= 6 ? 2 : 1;
 
-    // 随机洗牌玩家顺序来定内鬼
-    const playerIndices = room.players.map((_, i) => i);
-    const shuffledPlayerIndexes = shuffle(playerIndices);
+    const shuffledPlayers = shuffle(room.players);
+    const spyPlayerIds = shuffledPlayers.slice(0, spyCount).map((p) => p.playerId);
 
-    const spyIndexes = new Set(shuffledPlayerIndexes.slice(0, spyCount));
-    const spyPlayerIds: string[] = [];
-
-    // 洗牌可用公开职业
     const shuffledRoles = shuffle(template.roles);
-
     const secretsForGame = new Map<string, PlayerSecret>();
 
     room.players.forEach((player, idx) => {
-      const isSpy = spyIndexes.has(idx);
+      const isSpy = spyPlayerIds.includes(player.playerId);
       const roleDef = shuffledRoles[idx % shuffledRoles.length];
       player.publicRoleName = roleDef.roleName;
       player.hasActed = false;
       player.hasVoted = false;
       player.voteCount = 0;
+      player.isEliminated = false;
 
       if (isSpy) {
-        spyPlayerIds.push(player.playerId);
-        const spySecretDef = template.spySecrets[Math.floor(Math.random() * template.spySecrets.length)];
+        const spySecretDef =
+          template.spySecrets[Math.floor(Math.random() * template.spySecrets.length)];
         const trapDef = getRandomTrapMission();
         const trapMission: TrapMission = {
-          id: `trap_${Date.now()}_${idx}`,
+          id: `trap_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           keyword: trapDef.keyword,
           description: trapDef.description,
           achieved: false,
         };
 
-        secretsForGame.set(player.playerId, {
+        const secret: PlayerSecret = {
           playerId: player.playerId,
           team: Team.SPY,
           roleName: roleDef.roleName,
@@ -349,24 +435,28 @@ export class GameEngine {
           mission: spySecretDef.mission,
           knownInformation: [...spySecretDef.knownInformation, ...roleDef.knownClues],
           trapMission,
-        });
+        };
+        secretsForGame.set(player.playerId, secret);
+        this.store.saveSecret(gameId, player.playerId, secret);
       } else {
         const normalSecretDef =
           template.normalSecretsPool[Math.floor(Math.random() * template.normalSecretsPool.length)];
-        secretsForGame.set(player.playerId, {
+        const secret: PlayerSecret = {
           playerId: player.playerId,
           team: Team.NORMAL,
           roleName: roleDef.roleName,
           secret: roleDef.defaultSecret || normalSecretDef.secret,
           mission: roleDef.defaultMission || normalSecretDef.mission,
           knownInformation: roleDef.knownClues,
-        });
+        };
+        secretsForGame.set(player.playerId, secret);
+        this.store.saveSecret(gameId, player.playerId, secret);
       }
     });
 
     playerSecrets.set(gameId, secretsForGame);
 
-    // 第一轮事件
+    // 第一轮案发事件
     const openingTemplate =
       template.openingEvents[Math.floor(Math.random() * template.openingEvents.length)];
 
@@ -393,9 +483,12 @@ export class GameEngine {
       round: 0,
       startedAt: Date.now(),
       spyPlayerIds,
-      phaseEndsAt: Date.now() + 30 * 1000, // 30秒阅读身份
+      eliminatedPlayerIds: [],
+      phaseEndsAt: Date.now() + 25 * 1000, // 25秒阅读私密身份
       events: [openingEvent],
+      aiComments: [],
       actions: [],
+      midVotes: [],
       votes: [],
       version: 1,
     };
@@ -404,15 +497,19 @@ export class GameEngine {
     room.status = "PLAYING";
     room.currentGameId = gameId;
 
+    this.store.saveGame(serverGame);
+    this.store.saveRoom(room);
+    this.broadcast(roomId);
+
     return { room, game: toPublicGame(serverGame)! };
   }
 
-  /**
-   * 安全读取个人秘密 (PlayerSecret 仅自己可见)
-   */
   public getMySecret(gameId: string, playerId: string): PlayerSecret {
     const gameSecrets = playerSecrets.get(gameId);
     if (!gameSecrets) {
+      // 尝试从 SQLite 读取
+      const s = this.store.getSecret(gameId, playerId);
+      if (s) return s;
       throw new Error(ErrorCode.GAME_NOT_FOUND);
     }
     const secret = gameSecrets.get(playerId);
@@ -423,13 +520,12 @@ export class GameEngine {
   }
 
   /**
-   * 提交玩家行动 (质疑 / 辩护 / 公开线索 / 调查 / 保持沉默)
-   * 支持语音录音与语音识别内容
+   * 提交玩家发言/行动（放开发言限制，文字 + 语音，不限次数，意图作为可选标签）
    */
   public submitAction(
     gameId: string,
     playerId: string,
-    type: ActionType,
+    type: ActionType = ActionType.CHAT,
     targetPlayerId?: string,
     content: string = "",
     audioData?: string,
@@ -440,7 +536,11 @@ export class GameEngine {
     const room = rooms.get(game.roomId);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
 
-    const allowedPhases = [GamePhase.ROUND_1, GamePhase.ROUND_2, GamePhase.ROUND_3];
+    const allowedPhases = [
+      GamePhase.ROUND_1,
+      GamePhase.ROUND_2,
+      GamePhase.FINAL_ROUND,
+    ];
     if (!allowedPhases.includes(game.phase)) {
       throw new Error(ErrorCode.INVALID_GAME_STATE);
     }
@@ -448,14 +548,12 @@ export class GameEngine {
     const player = room.players.find((p) => p.playerId === playerId);
     if (!player) throw new Error(ErrorCode.UNAUTHORIZED);
 
-    // 检查本轮是否已行动 (防重复操作)
-    const existingAction = game.actions.find(
-      (a) => a.round === game.round && a.playerId === playerId
-    );
-    if (existingAction) {
-      throw new Error(ErrorCode.ALREADY_ACTED);
+    // 已被放逐出局的玩家不可发言
+    if (player.isEliminated) {
+      throw new Error("PLAYER_ELIMINATED");
     }
 
+    // 突破一人一次限制！玩家可以自由反复发言辩论
     let targetPlayerName: string | undefined = undefined;
     if (targetPlayerId) {
       const target = room.players.find((p) => p.playerId === targetPlayerId);
@@ -468,10 +566,10 @@ export class GameEngine {
       round: game.round,
       playerId,
       playerName: `${player.nickname} (${player.publicRoleName || "职员"})`,
-      type,
+      type: type || ActionType.CHAT,
       targetPlayerId,
       targetPlayerName,
-      content,
+      content: content.slice(0, 500), // 放宽至 500 字
       audioData,
       audioDuration,
       createdAt: Date.now(),
@@ -480,7 +578,7 @@ export class GameEngine {
     game.actions.push(action);
     player.hasActed = true;
 
-    // 钓鱼暗令检测：好人发言中是否中招触发内鬼的关键词
+    // 钓鱼暗令检测：好人发言中是否中招触发内鬼的冷门关键词
     const gameSecrets = playerSecrets.get(gameId);
     const isActorSpy = game.spyPlayerIds.includes(playerId);
     if (!isActorSpy && content && gameSecrets) {
@@ -500,14 +598,112 @@ export class GameEngine {
     }
 
     game.version += 1;
+    this.store.saveGame(game);
+    this.broadcast(room.roomId);
+
+    // AI 导演实时介入概率检测：当某轮发言累计达 3 条且尚未有最新点评时，异步触发 AI 导演插话
+    this.triggerAIDirectorCommentIfAppropriate(game, room);
 
     return { game: toPublicGame(game)!, room };
   }
 
   /**
-   * 发送房间语音条 / 聊天交流消息
-   * 满足玩家“不想打字时直接按住说话或发语音玩”的开黑对讲诉求
+   * 触发 AI 导演实时插话点评 / 现场追问
    */
+  private async triggerAIDirectorCommentIfAppropriate(game: ServerGame, room: Room) {
+    const roundActions = game.actions.filter((a) => a.round === game.round);
+    const roundComments = (game.aiComments || []).filter((c) => c.round === game.round);
+
+    // 限制每轮最多自动插话 2 次，避免过频打断
+    if (roundActions.length >= 3 && roundComments.length < 2) {
+      const template = getThemeById(game.themeId);
+      const playersList = room.players.map((p) => ({
+        name: p.nickname,
+        roleName: p.publicRoleName || "嫌疑人",
+      }));
+
+      try {
+        const commentData = await this.aiGateway.generateRoundComment(
+          game.gameId,
+          game.round,
+          template.themeName,
+          roundActions.map((a) => ({
+            actor: a.playerName,
+            content: a.content,
+            type: a.type,
+            target: a.targetPlayerName,
+          })),
+          playersList
+        );
+
+        if (commentData && commentData.text) {
+          if (!game.aiComments) game.aiComments = [];
+          const newComment: AIDirectorComment = {
+            commentId: `aic_${Date.now()}`,
+            round: game.round,
+            phase: game.phase,
+            text: commentData.text,
+            targetedPlayerName: commentData.targetedPlayerName,
+            createdAt: Date.now(),
+          };
+          game.aiComments.push(newComment);
+          game.version += 1;
+          this.store.saveGame(game);
+          this.broadcast(room.roomId);
+        }
+      } catch (e) {
+        console.warn("[GameEngine] AI director round comment failed:", e);
+      }
+    }
+  }
+
+  /**
+   * 玩家主动“呼叫AI导演评理/质询现场”
+   */
+  public async requestAIDirectorInterrogation(
+    gameId: string,
+    playerId: string
+  ): Promise<{ game: Game; room: Room }> {
+    const game = games.get(gameId);
+    if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
+    const room = rooms.get(game.roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+
+    const player = room.players.find((p) => p.playerId === playerId);
+    if (!player) throw new Error(ErrorCode.UNAUTHORIZED);
+
+    const template = getThemeById(game.themeId);
+    const recentActions = game.actions.slice(-10).map((a) => ({
+      actor: a.playerName,
+      content: a.content,
+    }));
+
+    const text = await this.aiGateway.callDirectorInterrogation(
+      template.themeName,
+      player.nickname,
+      player.publicRoleName || "职员",
+      recentActions
+    );
+
+    if (!game.aiComments) game.aiComments = [];
+    game.aiComments.push({
+      commentId: `aic_req_${Date.now()}`,
+      round: game.round,
+      phase: game.phase,
+      text,
+      targetedPlayerId: player.playerId,
+      targetedPlayerName: player.nickname,
+      tone: "INTERROGATION",
+      createdAt: Date.now(),
+    });
+
+    game.version += 1;
+    this.store.saveGame(game);
+    this.broadcast(room.roomId);
+
+    return { game: toPublicGame(game)!, room };
+  }
+
   public sendVoiceMessage(
     roomId: string,
     playerId: string,
@@ -538,47 +734,50 @@ export class GameEngine {
     };
 
     room.voiceMessages.push(message);
-    // 保留最近 60 条对讲记录
     if (room.voiceMessages.length > 60) {
       room.voiceMessages = room.voiceMessages.slice(-60);
     }
 
-    // 若当前正在游戏中，语音转文字的内容也纳入内鬼钓鱼暗令检测
-    if (room.currentGameId) {
-      const game = games.get(room.currentGameId);
-      if (game && content) {
-        const gameSecrets = playerSecrets.get(room.currentGameId);
-        const isActorSpy = game.spyPlayerIds.includes(playerId);
-        if (!isActorSpy && gameSecrets) {
-          for (const spyId of game.spyPlayerIds) {
-            const spySecret = gameSecrets.get(spyId);
-            if (spySecret && spySecret.trapMission && !spySecret.trapMission.achieved) {
-              if (content.toLowerCase().includes(spySecret.trapMission.keyword.toLowerCase())) {
-                spySecret.trapMission.achieved = true;
-                spySecret.trapMission.victimPlayerId = playerId;
-                spySecret.trapMission.victimPlayerName = player.nickname;
-                spySecret.trapMission.triggeredAt = Date.now();
-                game.trapTriggered = true;
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-
+    this.store.saveRoom(room);
+    this.broadcast(roomId);
     return { room, message };
   }
 
   /**
-   * 推进游戏阶段 (LOBBY -> ROLE_ASSIGNMENT -> ROUND_1 -> ROUND_2 -> ROUND_3 -> VOTING -> SETTLEMENT -> RESULT)
-   * 修复 P1: 内存锁 + 版本乐观锁 + 房主权限校验
+   * 房主手动提前推进（若玩家提早讨论完毕无需硬等倒计时）
    */
   public async advancePhase(
     gameId: string,
     requesterId: string,
     expectedVersion?: number
   ): Promise<{ game?: Game; room: Room }> {
+    const game = games.get(gameId);
+    if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
+    const room = rooms.get(game.roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+
+    if (room.ownerId !== requesterId) {
+      throw new Error(ErrorCode.NOT_ROOM_OWNER);
+    }
+    if (expectedVersion !== undefined && game.version !== expectedVersion) {
+      throw new Error(ErrorCode.INVALID_GAME_STATE);
+    }
+
+    return this.advancePhaseInternal(gameId);
+  }
+
+  /**
+   * 核心流转状态机：
+   * ROLE_ASSIGNMENT (25s)
+   * -> ROUND_1 (第1轮自由讨论 90s)
+   * -> ROUND_2 (第2轮深入质疑 90s + AI现场点评)
+   * -> MID_VOTING (首轮公投放逐 45s)
+   * -> EXILE_RESULT (放逐身份震撼公布 15s)
+   * -> FINAL_ROUND (决赛轮反转激辩 90s)
+   * -> VOTING (终极审判投票 45s)
+   * -> SETTLEMENT -> RESULT
+   */
+  public async advancePhaseInternal(gameId: string): Promise<{ game?: Game; room: Room }> {
     if (this.advancing.has(gameId)) {
       throw new Error(ErrorCode.INVALID_GAME_STATE);
     }
@@ -590,19 +789,7 @@ export class GameEngine {
       const room = rooms.get(game.roomId);
       if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
 
-      if (room.ownerId !== requesterId) {
-        throw new Error(ErrorCode.NOT_ROOM_OWNER);
-      }
-      if (expectedVersion !== undefined && game.version !== expectedVersion) {
-        throw new Error(ErrorCode.INVALID_GAME_STATE);
-      }
-
       const template: ThemeTemplate = room.customTheme || getThemeById(game.themeId);
-
-      // 重置玩家行动状态
-      room.players.forEach((p) => {
-        p.hasActed = false;
-      });
 
       switch (game.phase) {
         case GamePhase.ROLE_ASSIGNMENT: {
@@ -613,7 +800,7 @@ export class GameEngine {
         }
 
         case GamePhase.ROUND_1: {
-          // 进入第2轮：追加预制线索
+          // 进入第2轮：追加证物线索
           game.phase = GamePhase.ROUND_2;
           game.round = 2;
           game.phaseEndsAt = Date.now() + 90 * 1000;
@@ -637,24 +824,40 @@ export class GameEngine {
         }
 
         case GamePhase.ROUND_2: {
-          // 进入第3轮：AI导演剧情反转 (AI Twist!)
-          game.phase = GamePhase.ROUND_3;
-          game.round = 3;
-          game.phaseEndsAt = Date.now() + 100 * 1000;
+          // 进入首轮中期放逐投票！(MID_VOTING)
+          game.phase = GamePhase.MID_VOTING;
+          game.phaseEndsAt = Date.now() + 45 * 1000;
+          room.players.forEach((p) => {
+            p.hasVoted = false;
+            p.voteCount = 0;
+          });
+          game.midVotes = [];
+          this.triggerBotVotes(game, room, true);
+          break;
+        }
 
-          // 收集前两轮信息生成 Twist Context
+        case GamePhase.MID_VOTING: {
+          // 中期放逐结算并进入 EXILE_RESULT
+          await this.settleMidExile(game, room);
+          break;
+        }
+
+        case GamePhase.EXILE_RESULT: {
+          // 进入决赛轮 (FINAL_ROUND) 激辩！AI 导演剧情大反转
+          game.phase = GamePhase.FINAL_ROUND;
+          game.round = 3;
+          game.phaseEndsAt = Date.now() + 90 * 1000;
+
           const publicRoles = room.players.map((p) => ({
             playerAlias: p.nickname,
             roleName: p.publicRoleName || "职员",
           }));
-
           const importantActions = game.actions.map((a) => ({
             actor: a.playerName,
             action: a.type,
             target: a.targetPlayerName,
             content: a.content,
           }));
-
           const revealedClues = game.events
             .filter((e) => e.publicClue)
             .map((e) => e.publicClue as string);
@@ -666,27 +869,24 @@ export class GameEngine {
             importantActions,
             revealedClues,
           });
-
           game.events.push(twistEvent);
           break;
         }
 
-        case GamePhase.ROUND_3: {
-          // 进入最终投票阶段
+        case GamePhase.FINAL_ROUND: {
+          // 进入终极投票
           game.phase = GamePhase.VOTING;
-          game.phaseEndsAt = Date.now() + 60 * 1000;
+          game.phaseEndsAt = Date.now() + 45 * 1000;
           room.players.forEach((p) => {
             p.hasVoted = false;
             p.voteCount = 0;
           });
-
-          // 自动驱动已有机器人投票
-          this.triggerBotVotes(game, room);
+          this.triggerBotVotes(game, room, false);
           break;
         }
 
         case GamePhase.VOTING: {
-          // 结束投票，进入结算
+          // 最终结算！
           await this.settleGame(gameId);
           break;
         }
@@ -696,6 +896,10 @@ export class GameEngine {
       }
 
       game.version += 1;
+      this.store.saveGame(game);
+      this.store.saveRoom(room);
+      this.broadcast(room.roomId);
+
       return { game: toPublicGame(game), room };
     } finally {
       this.advancing.delete(gameId);
@@ -703,30 +907,147 @@ export class GameEngine {
   }
 
   /**
-   * 辅助方法：在进入投票阶段或机器人行动时自动投出机器人票
+   * 中期放逐公投结算 (Mid-Voting Exile Settlement)
    */
-  private triggerBotVotes(game: ServerGame, room: Room) {
-    const bots = room.players.filter((p) => p.isBot && !p.hasVoted);
-    bots.forEach((bot) => {
-      const candidates = room.players.filter((p) => p.playerId !== bot.playerId);
-      if (candidates.length > 0) {
-        const target = candidates[Math.floor(Math.random() * candidates.length)];
-        const vote: Vote = {
-          gameId: game.gameId,
-          voterPlayerId: bot.playerId,
-          targetPlayerId: target.playerId,
-          createdAt: Date.now(),
-        };
-        game.votes.push(vote);
-        bot.hasVoted = true;
-        target.voteCount = (target.voteCount || 0) + 1;
+  private async settleMidExile(game: ServerGame, room: Room) {
+    const voteCounts: Record<string, number> = {};
+    const livingPlayers = room.players.filter((p) => !p.isEliminated);
+    livingPlayers.forEach((p) => {
+      voteCounts[p.playerId] = 0;
+    });
+
+    (game.midVotes || []).forEach((v) => {
+      if (voteCounts[v.targetPlayerId] !== undefined) {
+        voteCounts[v.targetPlayerId] = (voteCounts[v.targetPlayerId] || 0) + 1;
       }
     });
+
+    livingPlayers.forEach((p) => {
+      p.voteCount = voteCounts[p.playerId] || 0;
+    });
+
+    const entries = Object.entries(voteCounts);
+    const maxVotes = Math.max(0, ...entries.map(([, c]) => c));
+    let exiledPlayer: RoomPlayer | undefined = undefined;
+
+    if (maxVotes > 0) {
+      const topIds = entries.filter(([, c]) => c === maxVotes).map(([id]) => id);
+      // 若平票，随机挑一人被公投放逐，制造极致悬疑
+      const chosenId = topIds[Math.floor(Math.random() * topIds.length)];
+      exiledPlayer = room.players.find((p) => p.playerId === chosenId);
+    }
+
+    if (exiledPlayer) {
+      exiledPlayer.isEliminated = true;
+      exiledPlayer.eliminatedInPhase = GamePhase.MID_VOTING;
+      if (!game.eliminatedPlayerIds) game.eliminatedPlayerIds = [];
+      game.eliminatedPlayerIds.push(exiledPlayer.playerId);
+
+      const isSpy = game.spyPlayerIds.includes(exiledPlayer.playerId);
+      const secret = playerSecrets.get(game.gameId)?.get(exiledPlayer.playerId);
+
+      game.exiledPlayer = {
+        playerId: exiledPlayer.playerId,
+        name: exiledPlayer.nickname,
+        roleName: exiledPlayer.publicRoleName || "职员",
+        team: isSpy ? Team.SPY : Team.NORMAL,
+        reason: `以最高票 (${maxVotes} 票) 被大家公投放逐出局！`,
+      };
+
+      // AI 导演戏剧化审判判词
+      const speech = await this.aiGateway.generateExileSpeech(
+        game.themeName,
+        exiledPlayer.nickname,
+        exiledPlayer.publicRoleName || "职员",
+        isSpy,
+        maxVotes
+      );
+
+      const exileEvent: GameEvent = {
+        eventId: `event_exile_${Date.now()}`,
+        gameId: game.gameId,
+        round: 2,
+        type: "SYSTEM",
+        title: "首轮放逐公投结果宣告",
+        description: speech,
+        publicClue: `【放逐核验】：${exiledPlayer.nickname} 已被移出决策室，真实阵营为【${
+          isSpy ? "内鬼" : "普通好人"
+        }】！`,
+        source: "AI",
+        createdAt: Date.now(),
+      };
+      game.events.push(exileEvent);
+
+      if (!game.aiComments) game.aiComments = [];
+      game.aiComments.push({
+        commentId: `aic_exile_${Date.now()}`,
+        round: 2,
+        phase: GamePhase.EXILE_RESULT,
+        text: speech,
+        targetedPlayerId: exiledPlayer.playerId,
+        targetedPlayerName: exiledPlayer.nickname,
+        tone: "DRAMATIC",
+        createdAt: Date.now(),
+      });
+    }
+
+    game.phase = GamePhase.EXILE_RESULT;
+    game.phaseEndsAt = Date.now() + 15 * 1000; // 15秒阅读判决
   }
 
   /**
-   * 提交投票 (P0 投票唯一性与反重复)
-   * 修复 P2: 仅在线非Bot玩家计入待投票人数
+   * 提交中期放逐投票
+   */
+  public async submitMidVote(
+    gameId: string,
+    voterPlayerId: string,
+    targetPlayerId: string
+  ): Promise<{ game: Game; room: Room }> {
+    const game = games.get(gameId);
+    if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
+    const room = rooms.get(game.roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+
+    if (game.phase !== GamePhase.MID_VOTING) {
+      throw new Error(ErrorCode.INVALID_GAME_STATE);
+    }
+
+    const voter = room.players.find((p) => p.playerId === voterPlayerId);
+    if (!voter || voter.isEliminated) throw new Error(ErrorCode.UNAUTHORIZED);
+
+    const target = room.players.find((p) => p.playerId === targetPlayerId);
+    if (!target || target.isEliminated) throw new Error("TARGET_PLAYER_NOT_FOUND");
+
+    if (!game.midVotes) game.midVotes = [];
+    const alreadyVoted = game.midVotes.find((v) => v.voterPlayerId === voterPlayerId);
+    if (alreadyVoted) {
+      throw new Error(ErrorCode.ALREADY_VOTED);
+    }
+
+    const vote: Vote = {
+      gameId,
+      voterPlayerId,
+      targetPlayerId,
+      createdAt: Date.now(),
+    };
+    game.midVotes.push(vote);
+    voter.hasVoted = true;
+    target.voteCount = (target.voteCount || 0) + 1;
+    game.version += 1;
+
+    // 若所有在线幸存非bot玩家都投票完成，立刻进入放逐结算！
+    const pending = room.players.filter((p) => p.online && !p.isBot && !p.isEliminated && !p.hasVoted);
+    if (pending.length === 0) {
+      await this.settleMidExile(game, room);
+    }
+
+    this.store.saveGame(game);
+    this.broadcast(room.roomId);
+    return { game: toPublicGame(game)!, room };
+  }
+
+  /**
+   * 提交终局审判投票 (VOTING)
    */
   public async submitVote(
     gameId: string,
@@ -743,12 +1064,11 @@ export class GameEngine {
     }
 
     const voter = room.players.find((p) => p.playerId === voterPlayerId);
-    if (!voter) throw new Error(ErrorCode.UNAUTHORIZED);
+    if (!voter || voter.isEliminated) throw new Error(ErrorCode.UNAUTHORIZED);
 
     const target = room.players.find((p) => p.playerId === targetPlayerId);
-    if (!target) throw new Error("TARGET_PLAYER_NOT_FOUND");
+    if (!target || target.isEliminated) throw new Error("TARGET_PLAYER_NOT_FOUND");
 
-    // 检查是否已投过票
     const alreadyVoted = game.votes.find((v) => v.voterPlayerId === voterPlayerId);
     if (alreadyVoted) {
       throw new Error(ErrorCode.ALREADY_VOTED);
@@ -766,18 +1086,22 @@ export class GameEngine {
     target.voteCount = (target.voteCount || 0) + 1;
     game.version += 1;
 
-    // 如果所有在线非bot玩家都已经投票完成，自动结算！
-    const pendingVoters = room.players.filter((p) => p.online && !p.isBot && !p.hasVoted);
+    const pendingVoters = room.players.filter(
+      (p) => p.online && !p.isBot && !p.isEliminated && !p.hasVoted
+    );
     if (pendingVoters.length === 0) {
       await this.settleGame(gameId);
     }
 
+    this.store.saveGame(game);
+    this.broadcast(room.roomId);
     return { game: toPublicGame(game)!, room };
   }
 
   /**
-   * 胜负结算与AI赛后报告生成
-   * 修复 P2 05: 全员0票时判定内鬼胜利，严谨计票
+   * 终局胜负结算与平衡重调：
+   * 1. 好人需抓出全部内鬼才算赢 (淘汰掉所有 spyPlayerIds)
+   * 2. 平票判平局 (winnerTeam = "TIE")
    */
   public async settleGame(gameId: string): Promise<{ game: Game; room: Room }> {
     const game = games.get(gameId);
@@ -787,37 +1111,65 @@ export class GameEngine {
 
     game.phase = GamePhase.SETTLEMENT;
 
-    // 统计各玩家得票数
+    // 统计最终得票数 (仅统计幸存者)
     const voteCounts: Record<string, number> = {};
-    room.players.forEach((p) => {
+    const livingPlayers = room.players.filter((p) => !p.isEliminated);
+    livingPlayers.forEach((p) => {
       voteCounts[p.playerId] = 0;
     });
 
     game.votes.forEach((v) => {
-      voteCounts[v.targetPlayerId] = (voteCounts[v.targetPlayerId] || 0) + 1;
+      if (voteCounts[v.targetPlayerId] !== undefined) {
+        voteCounts[v.targetPlayerId] = (voteCounts[v.targetPlayerId] || 0) + 1;
+      }
     });
 
-    room.players.forEach((p) => {
+    livingPlayers.forEach((p) => {
       p.voteCount = voteCounts[p.playerId] || 0;
     });
 
-    // 寻找最高得票数
     const entries = Object.entries(voteCounts);
     const maxVotes = Math.max(0, ...entries.map(([, c]) => c));
 
+    // 统计被捕获的内鬼集合
+    const eliminatedSpies = new Set<string>();
+    // 中期被放逐的内鬼
+    if (game.exiledPlayer && game.exiledPlayer.team === Team.SPY) {
+      eliminatedSpies.add(game.exiledPlayer.playerId);
+    }
+
     if (maxVotes === 0) {
-      // 全员零票，内鬼从容脱身
+      // 全员弃票/零票，内鬼得手
       game.winnerTeam = Team.SPY;
+      game.isTie = false;
     } else {
       const top = entries.filter(([, c]) => c === maxVotes).map(([id]) => id);
-      const spySet = new Set(game.spyPlayerIds);
-      // MVP 规范：最高票唯一且是内鬼 -> 好人胜；其余(含平票) -> 内鬼胜
-      game.winnerTeam = top.length === 1 && spySet.has(top[0]) ? Team.NORMAL : Team.SPY;
+
+      // 平票判定：平票判平局 (TIE)
+      if (top.length > 1) {
+        game.winnerTeam = "TIE";
+        game.isTie = true;
+      } else {
+        const convictedId = top[0];
+        if (game.spyPlayerIds.includes(convictedId)) {
+          eliminatedSpies.add(convictedId);
+        }
+
+        // 好人胜出的必要充分条件：必须抓出全部内鬼！
+        const allSpiesCaptured = game.spyPlayerIds.every((sId) => eliminatedSpies.has(sId));
+        if (allSpiesCaptured) {
+          game.winnerTeam = Team.NORMAL;
+          game.isTie = false;
+        } else {
+          game.winnerTeam = Team.SPY;
+          game.isTie = false;
+        }
+      }
     }
 
     game.endedAt = Date.now();
 
-    // 揭开内鬼真正身份 (写入 revealedSpies)
+    // 揭开全部内鬼真相
     const gameSecrets = playerSecrets.get(gameId);
     game.revealedSpies = game.spyPlayerIds.map((sId) => {
       const p = room.players.find((item) => item.playerId === sId);
@@ -829,7 +1181,7 @@ export class GameEngine {
       };
     });
 
-    // 生成 AI 赛后报告
+    // 生成赛后 AI 报告
     const spiesInfo = game.revealedSpies;
     const playersSummary = room.players.map((p) => {
       const secret = gameSecrets?.get(p.playerId);
@@ -860,7 +1212,7 @@ export class GameEngine {
 
     const report = await this.aiGateway.generateReport({
       theme: game.themeName,
-      winnerTeam: game.winnerTeam,
+      winnerTeam: game.winnerTeam === "TIE" ? Team.NORMAL : game.winnerTeam,
       spies: spiesInfo,
       players: playersSummary,
       actionsSummary,
@@ -877,7 +1229,9 @@ export class GameEngine {
             spyName: spyP?.nickname || "内鬼",
             keyword: sec.trapMission.keyword,
             victimName: sec.trapMission.victimPlayerName || "某好人",
-            bonusNotice: `内鬼【${spyP?.nickname || "内鬼"}】成功诱导【${sec.trapMission.victimPlayerName}】说出暗号「${sec.trapMission.keyword}」，达成【👑 绝命钓鱼王】神级成就！`,
+            bonusNotice: `内鬼【${spyP?.nickname || "内鬼"}】成功诱导【${
+              sec.trapMission.victimPlayerName
+            }】说出暗号「${sec.trapMission.keyword}」，达成【👑 绝命钓鱼王】冷门暗语神级成就！`,
           };
           break;
         }
@@ -888,82 +1242,89 @@ export class GameEngine {
     game.phase = GamePhase.RESULT;
     game.version += 1;
 
+    this.store.saveGame(game);
+    this.store.saveRoom(room);
+    this.broadcast(room.roomId);
+
     return { game: toPublicGame(game)!, room };
   }
 
-  /**
-   * P0 核心功能：「再来一局 (One More Game)」
-   * 修复 P2 08: 校验 requesterId 为房主，清理上一局内存防 OOM
-   */
+  private triggerBotVotes(game: ServerGame, room: Room, isMidVote: boolean) {
+    const bots = room.players.filter((p) => p.isBot && !p.isEliminated);
+    const candidatePool = room.players.filter((p) => !p.isEliminated);
+
+    bots.forEach((bot) => {
+      const candidates = candidatePool.filter((p) => p.playerId !== bot.playerId);
+      if (candidates.length > 0) {
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        const vote: Vote = {
+          gameId: game.gameId,
+          voterPlayerId: bot.playerId,
+          targetPlayerId: target.playerId,
+          createdAt: Date.now(),
+        };
+        if (isMidVote) {
+          if (!game.midVotes) game.midVotes = [];
+          game.midVotes.push(vote);
+        } else {
+          game.votes.push(vote);
+        }
+        bot.hasVoted = true;
+        target.voteCount = (target.voteCount || 0) + 1;
+      }
+    });
+  }
+
   public restartGame(roomId: string, requesterId: string): { room: Room; game: Game } {
     const room = rooms.get(roomId);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
     if (room.ownerId !== requesterId) throw new Error(ErrorCode.NOT_ROOM_OWNER);
 
-    // 清掉上一局，防内存泄漏
     if (room.currentGameId) {
       games.delete(room.currentGameId);
       playerSecrets.delete(room.currentGameId);
     }
 
-    // 重置所有人状态并开始新的一局
     room.players.forEach((p) => {
       p.isReady = true;
       p.hasActed = false;
       p.hasVoted = false;
       p.voteCount = 0;
+      p.isEliminated = false;
     });
 
-    // 启动全新一局
     return this.startGame(roomId, requesterId);
   }
 
-  /**
-   * 辅助测试：让所有 Bot 玩家模拟自动操作
-   */
   public triggerBotActions(gameId: string): { game: Game; room: Room } {
     const game = games.get(gameId);
     if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
     const room = rooms.get(game.roomId);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
 
-    const bots = room.players.filter((p) => p.isBot);
+    const bots = room.players.filter((p) => p.isBot && !p.isEliminated);
 
     if (
       game.phase === GamePhase.ROUND_1 ||
       game.phase === GamePhase.ROUND_2 ||
-      game.phase === GamePhase.ROUND_3
+      game.phase === GamePhase.FINAL_ROUND
     ) {
       const actionPool = [
-        { type: ActionType.ACCUSE, content: "昨晚他的时间线有很大疑点！" },
-        { type: ActionType.DEFEND, content: "我和他昨晚都在前台，他不可能去会议室。" },
-        { type: ActionType.REVEAL, content: "我看到了打印机旁边的草稿纸残留。" },
-        { type: ActionType.INVESTIGATE, content: "申请比对门禁出入卡的物理编号。" },
-        { type: ActionType.SILENT, content: "静观其变，观察谁在急于下结论。" },
+        { type: ActionType.ACCUSE, content: "昨晚他的时间线有很大疑点，我亲眼看到他慌张关电脑！" },
+        { type: ActionType.DEFEND, content: "我和他昨晚都在现场聊天，他根本没有作案时间。" },
+        { type: ActionType.REVEAL, content: "我梳理了一下现场物理痕迹，发现一个很关键的线索！" },
+        { type: ActionType.INVESTIGATE, content: "建议比对各人的出入时间差，肯定有人在隐瞒！" },
+        { type: ActionType.CHAT, content: "大家不要被带节奏，真正的内鬼正在暗中观察。" },
       ];
 
       bots.forEach((bot) => {
-        if (!bot.hasActed) {
-          const act = actionPool[Math.floor(Math.random() * actionPool.length)];
-          const otherPlayers = room.players.filter((p) => p.playerId !== bot.playerId);
-          const target = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
-          try {
-            this.submitAction(gameId, bot.playerId, act.type, target.playerId, act.content);
-          } catch (e) {
-            // ignore
-          }
-        }
-      });
-    } else if (game.phase === GamePhase.VOTING) {
-      bots.forEach((bot) => {
-        if (!bot.hasVoted) {
-          const otherPlayers = room.players.filter((p) => p.playerId !== bot.playerId);
-          const target = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
-          try {
-            this.submitVote(gameId, bot.playerId, target.playerId);
-          } catch (e) {
-            // ignore
-          }
+        const act = actionPool[Math.floor(Math.random() * actionPool.length)];
+        const otherPlayers = room.players.filter((p) => p.playerId !== bot.playerId && !p.isEliminated);
+        const target = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
+        try {
+          this.submitAction(gameId, bot.playerId, act.type, target?.playerId, act.content);
+        } catch (e) {
+          // ignore
         }
       });
     }
@@ -971,17 +1332,3 @@ export class GameEngine {
     return { game: toPublicGame(game)!, room };
   }
 }
-
-// 定期清理过期房间与对局 (防 OOM, 修复 P2 07)
-const SWEEP_MS = 10 * 60 * 1000;
-setInterval(() => {
-  const now = Date.now();
-  for (const [roomId, room] of rooms) {
-    if (room.expiresAt > now) continue;
-    if (room.currentGameId) {
-      games.delete(room.currentGameId);
-      playerSecrets.delete(room.currentGameId);
-    }
-    rooms.delete(roomId);
-  }
-}, SWEEP_MS).unref();

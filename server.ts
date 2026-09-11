@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import path from "path";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
@@ -8,6 +9,7 @@ import { issueToken, verifyToken, playerIdOf } from "./server/auth.js";
 import { ErrorCode } from "./src/types/game.js";
 import { PRESET_THEMES } from "./server/templates.js";
 import { AIGateway } from "./server/aiGateway.js";
+import { WebSocketManager } from "./server/ws.js";
 
 dotenv.config();
 
@@ -22,7 +24,12 @@ declare global {
 
 async function startServer() {
   const app = express();
+  const server = http.createServer(app);
   const PORT = 3000;
+
+  // 初始化 WebSocket 实时同步服务
+  const wsManager = WebSocketManager.getInstance();
+  wsManager.init(server);
 
   app.use(express.json({ limit: "10mb" }));
 
@@ -266,11 +273,33 @@ async function startServer() {
     }
   });
 
-  // 提交投票
+  // 提交首轮中期放逐投票 (MID_VOTING)
+  app.post("/api/game/mid-vote", requireAuth, async (req, res) => {
+    try {
+      const { gameId, targetPlayerId } = req.body;
+      const result = await engine.submitMidVote(gameId, req.playerId!, targetPlayerId);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // 提交终局审判投票
   app.post("/api/game/vote", requireAuth, async (req, res) => {
     try {
       const { gameId, targetPlayerId } = req.body;
       const result = await engine.submitVote(gameId, req.playerId!, targetPlayerId);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // 玩家主动呼叫 AI 导演评理/现场质询
+  app.post("/api/game/ai-interrogate", requireAuth, async (req, res) => {
+    try {
+      const { gameId } = req.body;
+      const result = await engine.requestAIDirectorInterrogation(gameId, req.playerId!);
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -314,7 +343,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`[AI局中局 Server] Running on http://localhost:${PORT}`);
   });
 }

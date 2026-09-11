@@ -206,6 +206,168 @@ export class AIGateway {
   }
 
   /**
+   * AI导演在各轮次的实时毒舌点评与追问 (Active NPC in Round 1 & Round 2 & Final Round)
+   */
+  public async generateRoundComment(
+    gameId: string,
+    round: number,
+    theme: string,
+    recentActions: { actor: string; content: string; type?: string; target?: string }[],
+    players: { name: string; roleName: string }[]
+  ): Promise<{ text: string; targetedPlayerName?: string }> {
+    const fallbackList = [
+      { text: `AI导演敏锐察觉：现场时间线出现明显分歧，有人眼神闪烁，急于为同伴辩解，这很不自然！`, targetedPlayerName: undefined },
+      { text: `AI导演介入追问：刚刚发言中有人故意遗漏了案发前5分钟的动向，请正面回应大家！`, targetedPlayerName: undefined },
+      { text: `AI导演提醒全员：现场遗留的物理痕迹与某些人的发言出现逻辑互斥，别被带偏了节奏！`, targetedPlayerName: undefined }
+    ];
+    const fallback = fallbackList[Math.floor(Math.random() * fallbackList.length)];
+
+    const client = getAiClient();
+    if (!client || recentActions.length === 0) {
+      return fallback;
+    }
+
+    const sanitizedActions = recentActions.slice(-8).map((a) => ({
+      actor: sanitize(a.actor, 20),
+      type: sanitize(a.type || "发言", 10),
+      target: sanitize(a.target || "", 20),
+      content: sanitize(a.content, 60),
+    }));
+
+    const sanitizedPlayers = players.map((p) => `${p.name}(${p.roleName})`).join("、");
+
+    const prompt = `你是一款微信熟人社交推理小游戏《AI局中局》的「AI导演兼毒舌审判官」。
+当前剧本：${sanitize(theme, 30)}
+当前进度：第 ${round} 轮自由讨论中。
+在场玩家：${sanitizedPlayers}
+
+最新几条玩家发言与动作：
+${JSON.stringify(sanitizedActions)}
+
+【指令】：
+作为一位真正在场、毒辣幽默的NPC，针对他们刚刚的发言或互撕，发表一段 40~70 字的【实时插话点评或犀利追问】！
+要求：
+1. 一针见血点出某个人的发言漏洞、时间差破绽，或者调侃某两个人的塑料友情/贼喊捉贼。
+2. 戏剧张力强、具有微信群熟人局的搞笑调侃氛围。
+3. 绝对不能宣判谁是内鬼！只能指出疑点。
+4. 返回纯合法 JSON：
+{
+  "text": "AI导演的点评/追问台词",
+  "targetedPlayerName": "被追问或调侃的玩家昵称（可空）"
+}
+只返回纯 JSON。`;
+
+    const task = async () => {
+      try {
+        const response = await client.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+        });
+        const text = response.text || "";
+        const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+        const parsed = JSON.parse(cleaned);
+        if (parsed.text) {
+          return {
+            text: sanitize(parsed.text, 120),
+            targetedPlayerName: parsed.targetedPlayerName ? sanitize(parsed.targetedPlayerName, 20) : undefined,
+          };
+        }
+        return fallback;
+      } catch (err) {
+        console.error("[AIGateway] Round comment failed:", err);
+        return fallback;
+      }
+    };
+
+    return withTimeout(task(), 5000, fallback);
+  }
+
+  /**
+   * 中期放逐审判判词 (Mid-Voting Exile Speech)
+   */
+  public async generateExileSpeech(
+    theme: string,
+    exiledPlayerName: string,
+    exiledRoleName: string,
+    isSpy: boolean,
+    voteCount: number
+  ): Promise<string> {
+    const fallback = isSpy
+      ? `【AI导演震撼裁决】全体公投决议已定！【${exiledPlayerName}（${exiledRoleName}）】以 ${voteCount} 票被全场放逐！经系统生物核验……真实身份确认是【潜伏内鬼】！好人阵营成功拔除一颗剧毒钉子！但博弈远未结束，决赛轮即将开战！`
+      : `【AI导演悲痛裁决】全体公投决议已定！【${exiledPlayerName}（${exiledRoleName}）】以 ${voteCount} 票被冤枉放逐！经系统核验……他的真正身份竟然是【无辜好人】！全场误杀良臣，真正的内鬼正在阴暗角落狂喜！`;
+
+    const client = getAiClient();
+    if (!client) return fallback;
+
+    const prompt = `你是一款微信熟人社交推理小游戏《AI局中局》的「AI导演」。
+剧本：${sanitize(theme, 30)}
+刚刚发生了首轮放逐公投！
+被放逐玩家：${sanitize(exiledPlayerName, 20)}（角色：${sanitize(exiledRoleName, 20)}）
+得票数：${voteCount} 票
+核验身份：${isSpy ? "真正的内鬼！被好人识破逮捕！" : "冤枉的好人！被全场误杀淘汰！"}
+
+请写一段极具戏剧张力、激动人心的现场审判宣告词（60~90字）。
+如果抓对内鬼，盛赞全场侦探；如果杀错好人，无情嘲讽大家被内鬼当枪使！
+直接输出台词文本，不要包含引号或json。`;
+
+    const task = async () => {
+      try {
+        const response = await client.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+        });
+        const text = (response.text || "").trim();
+        return text.length > 20 ? text : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+
+    return withTimeout(task(), 5000, fallback);
+  }
+
+  /**
+   * 玩家主动质询 AI 导演 (On-Demand Interrogation)
+   */
+  public async callDirectorInterrogation(
+    theme: string,
+    callerName: string,
+    callerRole: string,
+    actionsHistory: { actor: string; content: string }[]
+  ): Promise<string> {
+    const fallback = `AI导演冷笑一声：【${callerName}】你突然呼叫我评理，是在试图借我的嘴转移大家视线，还是真掌握了实锤？我劝你们好好对一对刚刚关于时间线的前后矛盾！`;
+    const client = getAiClient();
+    if (!client) return fallback;
+
+    const sanitizedActions = actionsHistory.slice(-10).map((a) => `${sanitize(a.actor, 15)}: ${sanitize(a.content, 50)}`).join("\n");
+
+    const prompt = `你是一款推理游戏《AI局中局》的「AI导演」。
+剧本：${sanitize(theme, 30)}
+玩家【${sanitize(callerName, 20)}(${sanitize(callerRole, 20)})】在讨论现场突然点击了「呼叫AI导演评理/质询」！
+最近现场对话记录：
+${sanitizedActions}
+
+请用AI导演兼裁判的高冷毒舌口吻，给出现场局势的最新冷眼点评（40~80字）。
+不要说谁是内鬼，可以调侃呼叫者，也可以挑拨现场矛盾，激发新一轮争辩！
+直接输出台词，不要json。`;
+
+    const task = async () => {
+      try {
+        const response = await client.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+        });
+        const text = (response.text || "").trim();
+        return text.length > 15 ? text : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+
+    return withTimeout(task(), 5000, fallback);
+  }
+
+  /**
    * 生成赛后复盘AI报告 (Post-Game Report)
    * 评选推理王、戏精大奖、爆笑场面与每位玩家称号
    */
