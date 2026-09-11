@@ -11,8 +11,10 @@ import {
   Vote,
   GameEvent,
   ErrorCode,
+  TrapMission,
+  RoomVoiceMessage,
 } from "../src/types/game.js";
-import { COMPANY_THEME } from "./templates.js";
+import { COMPANY_THEME, ThemeTemplate, getThemeById, getRandomTrapMission } from "./templates.js";
 import { AIGateway } from "./aiGateway.js";
 import { playerIdOf } from "./auth.js";
 
@@ -107,12 +109,33 @@ export class GameEngine {
       status: "WAITING",
       minPlayers: 4,
       maxPlayers: 8,
+      themeId: COMPANY_THEME.themeId,
+      themeName: COMPANY_THEME.themeName,
+      themeBackground: COMPANY_THEME.background,
+      customTheme: COMPANY_THEME,
       createdAt: Date.now(),
       expiresAt: Date.now() + 24 * 60 * 60 * 1000,
       players: [owner],
+      voiceMessages: [],
     };
 
     rooms.set(roomId, room);
+    return room;
+  }
+
+  /**
+   * 房主更换或定制房间剧本 (Custom Scenario)
+   */
+  public setRoomTheme(roomId: string, theme: ThemeTemplate, requesterId: string): Room {
+    const room = rooms.get(roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+    if (room.ownerId !== requesterId) throw new Error(ErrorCode.NOT_ROOM_OWNER);
+    if (room.status !== "WAITING") throw new Error(ErrorCode.INVALID_GAME_STATE);
+
+    room.themeId = theme.themeId;
+    room.themeName = theme.themeName;
+    room.themeBackground = theme.background;
+    room.customTheme = theme;
     return room;
   }
 
@@ -281,7 +304,7 @@ export class GameEngine {
     }
 
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const template = COMPANY_THEME;
+    const template: ThemeTemplate = room.customTheme || getThemeById(room.themeId);
 
     // 随机分配角色与内鬼身份 (Fisher-Yates 算法)
     const playerCount = room.players.length;
@@ -310,6 +333,14 @@ export class GameEngine {
       if (isSpy) {
         spyPlayerIds.push(player.playerId);
         const spySecretDef = template.spySecrets[Math.floor(Math.random() * template.spySecrets.length)];
+        const trapDef = getRandomTrapMission();
+        const trapMission: TrapMission = {
+          id: `trap_${Date.now()}_${idx}`,
+          keyword: trapDef.keyword,
+          description: trapDef.description,
+          achieved: false,
+        };
+
         secretsForGame.set(player.playerId, {
           playerId: player.playerId,
           team: Team.SPY,
@@ -317,6 +348,7 @@ export class GameEngine {
           secret: spySecretDef.secret,
           mission: spySecretDef.mission,
           knownInformation: [...spySecretDef.knownInformation, ...roleDef.knownClues],
+          trapMission,
         });
       } else {
         const normalSecretDef =
@@ -357,6 +389,7 @@ export class GameEngine {
       phase: GamePhase.ROLE_ASSIGNMENT,
       themeId: template.themeId,
       themeName: template.themeName,
+      themeBackground: template.background,
       round: 0,
       startedAt: Date.now(),
       spyPlayerIds,
@@ -391,13 +424,16 @@ export class GameEngine {
 
   /**
    * 提交玩家行动 (质疑 / 辩护 / 公开线索 / 调查 / 保持沉默)
+   * 支持语音录音与语音识别内容
    */
   public submitAction(
     gameId: string,
     playerId: string,
     type: ActionType,
     targetPlayerId?: string,
-    content: string = ""
+    content: string = "",
+    audioData?: string,
+    audioDuration?: number
   ): { game: Game; room: Room } {
     const game = games.get(gameId);
     if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
@@ -436,14 +472,102 @@ export class GameEngine {
       targetPlayerId,
       targetPlayerName,
       content,
+      audioData,
+      audioDuration,
       createdAt: Date.now(),
     };
 
     game.actions.push(action);
     player.hasActed = true;
+
+    // 钓鱼暗令检测：好人发言中是否中招触发内鬼的关键词
+    const gameSecrets = playerSecrets.get(gameId);
+    const isActorSpy = game.spyPlayerIds.includes(playerId);
+    if (!isActorSpy && content && gameSecrets) {
+      for (const spyId of game.spyPlayerIds) {
+        const spySecret = gameSecrets.get(spyId);
+        if (spySecret && spySecret.trapMission && !spySecret.trapMission.achieved) {
+          if (content.toLowerCase().includes(spySecret.trapMission.keyword.toLowerCase())) {
+            spySecret.trapMission.achieved = true;
+            spySecret.trapMission.victimPlayerId = playerId;
+            spySecret.trapMission.victimPlayerName = player.nickname;
+            spySecret.trapMission.triggeredAt = Date.now();
+            game.trapTriggered = true;
+            break;
+          }
+        }
+      }
+    }
+
     game.version += 1;
 
     return { game: toPublicGame(game)!, room };
+  }
+
+  /**
+   * 发送房间语音条 / 聊天交流消息
+   * 满足玩家“不想打字时直接按住说话或发语音玩”的开黑对讲诉求
+   */
+  public sendVoiceMessage(
+    roomId: string,
+    playerId: string,
+    content: string = "",
+    audioData?: string,
+    audioDuration?: number
+  ): { room: Room; message: RoomVoiceMessage } {
+    const room = rooms.get(roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+
+    const player = room.players.find((p) => p.playerId === playerId);
+    if (!player) throw new Error(ErrorCode.UNAUTHORIZED);
+
+    if (!room.voiceMessages) {
+      room.voiceMessages = [];
+    }
+
+    const message: RoomVoiceMessage = {
+      messageId: `vmsg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      roomId,
+      playerId,
+      playerName: player.nickname,
+      avatarUrl: player.avatarUrl,
+      content: content.trim() || (audioDuration ? `[语音 ${Math.round(audioDuration)}" ]` : "发表了一条语音"),
+      audioData,
+      audioDuration,
+      createdAt: Date.now(),
+    };
+
+    room.voiceMessages.push(message);
+    // 保留最近 60 条对讲记录
+    if (room.voiceMessages.length > 60) {
+      room.voiceMessages = room.voiceMessages.slice(-60);
+    }
+
+    // 若当前正在游戏中，语音转文字的内容也纳入内鬼钓鱼暗令检测
+    if (room.currentGameId) {
+      const game = games.get(room.currentGameId);
+      if (game && content) {
+        const gameSecrets = playerSecrets.get(room.currentGameId);
+        const isActorSpy = game.spyPlayerIds.includes(playerId);
+        if (!isActorSpy && gameSecrets) {
+          for (const spyId of game.spyPlayerIds) {
+            const spySecret = gameSecrets.get(spyId);
+            if (spySecret && spySecret.trapMission && !spySecret.trapMission.achieved) {
+              if (content.toLowerCase().includes(spySecret.trapMission.keyword.toLowerCase())) {
+                spySecret.trapMission.achieved = true;
+                spySecret.trapMission.victimPlayerId = playerId;
+                spySecret.trapMission.victimPlayerName = player.nickname;
+                spySecret.trapMission.triggeredAt = Date.now();
+                game.trapTriggered = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return { room, message };
   }
 
   /**
@@ -473,7 +597,7 @@ export class GameEngine {
         throw new Error(ErrorCode.INVALID_GAME_STATE);
       }
 
-      const template = COMPANY_THEME;
+      const template: ThemeTemplate = room.customTheme || getThemeById(game.themeId);
 
       // 重置玩家行动状态
       room.players.forEach((p) => {
@@ -742,6 +866,23 @@ export class GameEngine {
       actionsSummary,
       votesSummary,
     });
+
+    // 钓鱼暗令成就结算
+    if (gameSecrets) {
+      for (const sId of game.spyPlayerIds) {
+        const sec = gameSecrets.get(sId);
+        if (sec?.trapMission?.achieved) {
+          const spyP = room.players.find((p) => p.playerId === sId);
+          report.trapAchievement = {
+            spyName: spyP?.nickname || "内鬼",
+            keyword: sec.trapMission.keyword,
+            victimName: sec.trapMission.victimPlayerName || "某好人",
+            bonusNotice: `内鬼【${spyP?.nickname || "内鬼"}】成功诱导【${sec.trapMission.victimPlayerName}】说出暗号「${sec.trapMission.keyword}」，达成【👑 绝命钓鱼王】神级成就！`,
+          };
+          break;
+        }
+      }
+    }
 
     game.report = report;
     game.phase = GamePhase.RESULT;

@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { Team, PlayerReport, PlayerTag, GameEvent } from "../src/types/game.js";
-import { COMPANY_THEME, FALLBACK_REPORTS } from "./templates.js";
+import { COMPANY_THEME, FALLBACK_REPORTS, ThemeTemplate, PRESET_THEMES } from "./templates.js";
 
 export interface TwistContext {
   theme: string;
@@ -321,5 +321,139 @@ export class AIGateway {
     };
 
     return withTimeout(task(), 8000, fallbackReport);
+  }
+
+  /**
+   * AI 自定义剧本生成 (Custom Theme Generator)
+   * 接受玩家或房主的一句话创意，快速生成完整的结构化剧本
+   */
+  public async generateCustomTheme(userPrompt: string): Promise<ThemeTemplate> {
+    const cleanPrompt = sanitize(userPrompt, 80) || "奶茶店绝密配方失窃案";
+    const randomPreset = PRESET_THEMES[Math.floor(Math.random() * PRESET_THEMES.length)];
+    const fallbackTheme: ThemeTemplate = {
+      themeId: `custom_${Date.now()}`,
+      themeName: `自定义剧本 · ${cleanPrompt}`,
+      background: `案发现场发生了离奇事件：“${cleanPrompt}”。在场人员均有嫌疑，但各执一词，真相扑朔迷离。`,
+      roles: randomPreset.roles,
+      spySecrets: randomPreset.spySecrets,
+      normalSecretsPool: randomPreset.normalSecretsPool,
+      openingEvents: randomPreset.openingEvents,
+      round2Events: randomPreset.round2Events,
+      twistFallbacks: randomPreset.twistFallbacks,
+    };
+
+    const client = getAiClient();
+    if (!client) {
+      return fallbackTheme;
+    }
+
+    const prompt = `你是一款微信熟人社交推理小游戏《AI局中局》的剧本主创。
+玩家提出了一个专属剧本灵感：“${cleanPrompt}”。
+请根据这个灵感，为4~8人熟人局创作一套幽默、悬疑、戏剧张力强的完整推理剧本！
+
+必须输出严格合法的 JSON 对象，格式如下：
+{
+  "themeName": "剧本名称（例如：网红奶茶店 · 消失的爆款配方）",
+  "background": "2~3句话生动介绍案发现场背景与矛盾点",
+  "roles": [
+    {
+      "roleName": "职业/角色名称（例如：金牌店长 / 研发学徒 / 资深店员 / 隔壁卧底加盟商 / 卫生督察员 / VIP常客）",
+      "duty": "一句话描述其职责或日常习惯",
+      "defaultSecret": "其案发时的秘密行动或不在场证明",
+      "defaultMission": "其个人胜利目标或自证清白方向",
+      "knownClues": ["掌握的第一条现场细节线索", "掌握的第二条线索"]
+    }
+  ],
+  "spySecrets": [
+    {
+      "secret": "内鬼真正作案细节（1句话）",
+      "mission": "内鬼的潜伏目标与甩锅指引",
+      "knownInformation": ["内鬼掌握的掩盖痕迹信息", "内鬼的逃脱底牌"]
+    }
+  ],
+  "normalSecretsPool": [
+    {
+      "secret": "普通阵营人员的掩饰理由",
+      "mission": "普通阵营目标",
+      "knownInformation": ["一条关键环境线索"]
+    }
+  ],
+  "openingEvents": [
+    {
+      "title": "第一轮事件 · 现场初次勘察",
+      "description": "现场发现的异样与初步矛盾",
+      "publicClue": "公布给全场的公共线索",
+      "discussionPrompt": "引导大家第一轮发言的提问"
+    }
+  ],
+  "round2Events": [
+    {
+      "title": "第二轮追加线索 · 关键证物出现",
+      "description": "深入调查发现的物理证据",
+      "publicClue": "锁定嫌疑人特征的公共线索",
+      "discussionPrompt": "第二轮针对嫌疑人发言破绽的质问"
+    }
+  ],
+  "twistFallbacks": [
+    {
+      "title": "第三轮AI反转 · 逆转的真相",
+      "description": "颠覆前两轮推论的惊人反转细节",
+      "publicClue": "揭开表面谎言的反转线索",
+      "discussionPrompt": "终极对决提问：谁一直在利用大家的盲区？"
+    }
+  ]
+}
+注意：roles 数组至少包含 6 个有趣的角色。只返回纯 JSON，不要 markdown 或其他字符。`;
+
+    const task = async (): Promise<ThemeTemplate> => {
+      try {
+        const response = await client.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+        });
+
+        const text = response.text || "";
+        const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+        const parsed = JSON.parse(cleaned);
+
+        if (parsed.themeName && Array.isArray(parsed.roles) && parsed.roles.length >= 4) {
+          return {
+            themeId: `custom_${Date.now()}`,
+            themeName: parsed.themeName,
+            background: parsed.background || fallbackTheme.background,
+            roles: parsed.roles.map((r: any) => ({
+              roleName: sanitize(r.roleName, 20),
+              duty: sanitize(r.duty, 40),
+              defaultSecret: sanitize(r.defaultSecret, 120),
+              defaultMission: sanitize(r.defaultMission, 80),
+              knownClues: Array.isArray(r.knownClues)
+                ? r.knownClues.map((c: any) => sanitize(c, 80))
+                : ["昨晚现场遗留了可疑痕迹"],
+            })),
+            spySecrets: Array.isArray(parsed.spySecrets) && parsed.spySecrets.length > 0
+              ? parsed.spySecrets
+              : fallbackTheme.spySecrets,
+            normalSecretsPool: Array.isArray(parsed.normalSecretsPool) && parsed.normalSecretsPool.length > 0
+              ? parsed.normalSecretsPool
+              : fallbackTheme.normalSecretsPool,
+            openingEvents: Array.isArray(parsed.openingEvents) && parsed.openingEvents.length > 0
+              ? parsed.openingEvents
+              : fallbackTheme.openingEvents,
+            round2Events: Array.isArray(parsed.round2Events) && parsed.round2Events.length > 0
+              ? parsed.round2Events
+              : fallbackTheme.round2Events,
+            twistFallbacks: Array.isArray(parsed.twistFallbacks) && parsed.twistFallbacks.length > 0
+              ? parsed.twistFallbacks
+              : fallbackTheme.twistFallbacks,
+          };
+        }
+        return fallbackTheme;
+      } catch (err) {
+        console.error("[AIGateway] Custom theme generation failed:", err);
+        return fallbackTheme;
+      }
+    };
+
+    return withTimeout(task(), 9000, fallbackTheme);
   }
 }

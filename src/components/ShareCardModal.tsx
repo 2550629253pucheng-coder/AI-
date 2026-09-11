@@ -43,17 +43,17 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
     canvas.width = width;
     canvas.height = height;
 
-    // 1. 背景暗夜渐变
+    // 1. 背景暗夜深紫黑渐变
     const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-    bgGrad.addColorStop(0, "#171717");
-    bgGrad.addColorStop(0.5, "#0c0a09");
-    bgGrad.addColorStop(1, "#000000");
+    bgGrad.addColorStop(0, "#1A1730"); // cyber-card
+    bgGrad.addColorStop(0.5, "#12111F"); // cyber-mid
+    bgGrad.addColorStop(1, "#0A0A14"); // cyber-deep
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // 2. 装饰性网格与金光
+    // 2. 装饰性网格与霓虹紫微光
     ctx.save();
-    ctx.strokeStyle = "rgba(245, 158, 11, 0.08)";
+    ctx.strokeStyle = "rgba(139, 92, 246, 0.08)";
     ctx.lineWidth = 1;
     for (let x = 30; x < width; x += 40) {
       ctx.beginPath();
@@ -68,52 +68,53 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
       ctx.stroke();
     }
 
-    // 顶部与中心琥珀微光
+    // 顶部与中心紫粉霓虹微光
     const radialGrad = ctx.createRadialGradient(width / 2, 140, 10, width / 2, 140, 260);
-    radialGrad.addColorStop(0, "rgba(245, 158, 11, 0.18)");
-    radialGrad.addColorStop(1, "rgba(0,0,0,0)");
+    radialGrad.addColorStop(0, "rgba(192, 132, 252, 0.22)");
+    radialGrad.addColorStop(0.7, "rgba(236, 72, 153, 0.08)");
+    radialGrad.addColorStop(1, "rgba(10, 10, 20, 0)");
     ctx.fillStyle = radialGrad;
     ctx.fillRect(0, 0, width, height);
     ctx.restore();
 
-    // 3. 边框线与内框
+    // 3. 边框线与内框 (赛博霓虹双线边框)
     ctx.save();
-    ctx.strokeStyle = "rgba(245, 158, 11, 0.4)";
+    ctx.strokeStyle = "rgba(139, 92, 246, 0.5)";
     ctx.lineWidth = 3;
     ctx.strokeRect(24, 24, width - 48, height - 48);
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+    ctx.strokeStyle = "rgba(34, 211, 238, 0.18)";
     ctx.lineWidth = 1;
     ctx.strokeRect(32, 32, width - 64, height - 64);
     ctx.restore();
 
     // 4. 头部 Header
-    ctx.fillStyle = "#f59e0b";
+    ctx.fillStyle = "#C084FC";
     ctx.font = "bold 20px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("✦ AI 局 中 局 · 终 局 战 报 ✦", width / 2, 75);
 
-    ctx.fillStyle = "#a3a3a3";
+    ctx.fillStyle = "#94A3B8";
     ctx.font = "16px sans-serif";
     ctx.fillText("微信社交推理小游戏 · AI导演实时推演", width / 2, 105);
 
     // 5. 剧本主题大标题
-    ctx.fillStyle = "#fafafa";
+    ctx.fillStyle = "#FAF5FF";
     ctx.font = "bold 32px sans-serif";
     ctx.fillText(game.themeName.split("·")[0].trim(), width / 2, 160);
 
     // 6. 胜负大徽章
     const badgeY = 195;
     ctx.save();
-    ctx.fillStyle = isNormalWin ? "rgba(14, 165, 233, 0.2)" : "rgba(244, 63, 94, 0.2)";
-    ctx.strokeStyle = isNormalWin ? "rgba(14, 165, 233, 0.7)" : "rgba(244, 63, 94, 0.7)";
+    ctx.fillStyle = isNormalWin ? "rgba(45, 212, 191, 0.2)" : "rgba(236, 72, 153, 0.2)";
+    ctx.strokeStyle = isNormalWin ? "rgba(45, 212, 191, 0.8)" : "rgba(236, 72, 153, 0.8)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.roundRect(width / 2 - 180, badgeY, 360, 52, 26);
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = isNormalWin ? "#38bdf8" : "#fb7185";
+    ctx.fillStyle = isNormalWin ? "#2DD4BF" : "#EC4899";
     ctx.font = "bold 24px sans-serif";
     ctx.fillText(isNormalWin ? "🛡️ 普通员工阵营大获全胜！" : "🕵️ 内鬼阵营成功潜伏胜出！", width / 2, badgeY + 35);
     ctx.restore();
@@ -121,8 +122,8 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
     // 7. 详细对局信息框
     const boxY = 275;
     ctx.save();
-    ctx.fillStyle = "rgba(23, 23, 23, 0.9)";
-    ctx.strokeStyle = "rgba(64, 64, 64, 0.7)";
+    ctx.fillStyle = "rgba(18, 17, 31, 0.92)";
+    ctx.strokeStyle = "rgba(43, 39, 74, 0.85)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.roundRect(48, boxY, width - 96, 420, 20);
@@ -132,16 +133,16 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
     // 真正内鬼公示
     ctx.textAlign = "left";
     let curY = boxY + 45;
-    ctx.fillStyle = "#f43f5e";
+    ctx.fillStyle = "#EC4899";
     ctx.font = "bold 20px sans-serif";
     ctx.fillText("【🕵️ 真正内鬼】", 72, curY);
-    ctx.fillStyle = "#fecdd3";
+    ctx.fillStyle = "#FCE7F3";
     ctx.font = "18px sans-serif";
     ctx.fillText(spy ? `${spy.name}（担任职务：${spy.roleName}）` : "隐藏至深，未被当场抓获", 220, curY);
 
     // 分割线
     curY += 30;
-    ctx.strokeStyle = "rgba(64, 64, 64, 0.5)";
+    ctx.strokeStyle = "rgba(43, 39, 74, 0.7)";
     ctx.beginPath();
     ctx.moveTo(72, curY);
     ctx.lineTo(width - 72, curY);
@@ -149,25 +150,25 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
 
     // 推理王
     curY += 45;
-    ctx.fillStyle = "#f59e0b";
+    ctx.fillStyle = "#C084FC";
     ctx.font = "bold 20px sans-serif";
     ctx.fillText("【🏆 逻辑推理王】", 72, curY);
-    ctx.fillStyle = "#fde68a";
+    ctx.fillStyle = "#E9D5FF";
     ctx.font = "18px sans-serif";
     ctx.fillText(report?.bestDetective || "全场普通员工", 240, curY);
 
     // 最佳演技
     curY += 50;
-    ctx.fillStyle = "#fb7185";
+    ctx.fillStyle = "#EC4899";
     ctx.font = "bold 20px sans-serif";
     ctx.fillText("【🎭 最佳演技奖】", 72, curY);
-    ctx.fillStyle = "#fecdd3";
+    ctx.fillStyle = "#FCE7F3";
     ctx.font = "18px sans-serif";
     ctx.fillText(report?.bestActor || "神秘影帝", 240, curY);
 
     // 分割线
     curY += 30;
-    ctx.strokeStyle = "rgba(64, 64, 64, 0.5)";
+    ctx.strokeStyle = "rgba(43, 39, 74, 0.7)";
     ctx.beginPath();
     ctx.moveTo(72, curY);
     ctx.lineTo(width - 72, curY);
@@ -175,12 +176,12 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
 
     // AI复盘点评
     curY += 40;
-    ctx.fillStyle = "#a3a3a3";
+    ctx.fillStyle = "#94A3B8";
     ctx.font = "bold 16px sans-serif";
     ctx.fillText("✦ AI 导演深度复盘点评：", 72, curY);
 
     curY += 28;
-    ctx.fillStyle = "#e5e5e5";
+    ctx.fillStyle = "#E2E8F0";
     ctx.font = "15px sans-serif";
     const summaryText = report?.summary || "这是一场惊心动魄的职场智斗，每个人都在怀疑与被怀疑中步步为营。";
     // 文本换行渲染
@@ -194,7 +195,7 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
     // 名场面
     if (report?.funniestMoment) {
       curY += 10;
-      ctx.fillStyle = "#38bdf8";
+      ctx.fillStyle = "#22D3EE";
       ctx.font = "italic 15px sans-serif";
       ctx.fillText(`“名场面：${report.funniestMoment.slice(0, 30)}...”`, 72, curY);
     }
@@ -203,11 +204,11 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
     // 8. 底部二维码/房间召唤文案
     const footerY = 740;
     ctx.textAlign = "center";
-    ctx.fillStyle = "#f59e0b";
+    ctx.fillStyle = "#C084FC";
     ctx.font = "bold 18px monospace";
     ctx.fillText(`房号对决档案：#${game.gameId.slice(-6).toUpperCase()}`, width / 2, footerY);
 
-    ctx.fillStyle = "#737373";
+    ctx.fillStyle = "#64748B";
     ctx.font = "14px sans-serif";
     ctx.fillText("微信扫码或输入房间号，即刻开启下一局深夜对决！", width / 2, footerY + 30);
     ctx.fillText("长按或点击下方按钮保存本战绩海报", width / 2, footerY + 54);
@@ -243,7 +244,7 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 dark:bg-black/85 backdrop-blur-xs flex items-center justify-center p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -254,18 +255,18 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.94 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-neutral-900 border border-neutral-700 rounded-3xl p-4 sm:p-5 max-w-sm w-full shadow-2xl space-y-3 relative max-h-[92vh] flex flex-col"
+        className="bg-white dark:bg-cyber-card border border-slate-200 dark:border-cyber-border-bright rounded-3xl p-4 sm:p-5 max-w-sm w-full shadow-xl space-y-3 relative max-h-[92vh] flex flex-col neon-glow-purple"
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-neutral-400 hover:text-white p-1 rounded-full hover:bg-neutral-800 transition"
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-full hover:bg-slate-100 dark:hover:bg-cyber-card-hover transition"
           aria-label="关闭弹窗"
         >
           <X className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-1.5 text-xs text-amber-400 font-bold tracking-wide">
-          <Sparkles className="w-4 h-4" />
+        <div className="flex items-center gap-1.5 text-xs text-indigo-700 dark:text-neon-lightpurple font-bold tracking-wide">
+          <Sparkles className="w-4 h-4 text-pink-600 dark:text-neon-pink" />
           <span>微信战绩分享海报</span>
         </div>
 
@@ -273,24 +274,24 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
         <canvas ref={canvasRef} className="hidden" />
 
         {/* 图片预览区 */}
-        <div className="flex-1 overflow-y-auto rounded-2xl bg-neutral-950 border border-neutral-800 flex items-center justify-center p-2 min-h-[300px]">
+        <div className="flex-1 overflow-y-auto rounded-2xl bg-slate-50 dark:bg-cyber-deep border border-slate-200 dark:border-cyber-border flex items-center justify-center p-2 min-h-[300px]">
           {isGenerating ? (
-            <div className="text-center py-12 text-xs text-neutral-400 space-y-2">
-              <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+            <div className="text-center py-12 text-xs text-slate-500 dark:text-neutral-400 space-y-2">
+              <div className="w-6 h-6 border-2 border-indigo-600 dark:border-neon-purple border-t-transparent rounded-full animate-spin mx-auto" />
               <p>AI 正在渲染高清对局海报...</p>
             </div>
           ) : imageUrl ? (
             <img
               src={imageUrl}
               alt="对局战报海报"
-              className="w-full h-auto rounded-xl shadow-lg border border-amber-500/30 object-contain"
+              className="w-full h-auto rounded-xl shadow-md border border-slate-200 dark:border-neon-purple/40 object-contain"
             />
           ) : (
-            <div className="text-center text-xs text-neutral-500">海报生成受阻，请直接复制文字战报</div>
+            <div className="text-center text-xs text-slate-400 dark:text-neutral-500">海报生成受阻，请直接复制文字战报</div>
           )}
         </div>
 
-        <p className="text-[11px] text-neutral-400 text-center">
+        <p className="text-[11px] text-slate-500 dark:text-neutral-400 text-center font-medium">
           手机端可长按图片直接发送给微信好友或保存相册
         </p>
 
@@ -299,7 +300,7 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
           <button
             onClick={handleDownload}
             disabled={!imageUrl}
-            className="py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 text-neutral-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow transition disabled:opacity-50"
+            className="py-2.5 btn-primary-neon active:scale-[0.99] text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow transition disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
             <span>保存海报图片</span>
@@ -307,9 +308,9 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
 
           <button
             onClick={copyText}
-            className="py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition border border-neutral-700"
+            className="btn-secondary-cyan py-2.5 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs"
           >
-            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            {copied ? <Check className="w-4 h-4 text-emerald-600 dark:text-neon-teal" /> : <Copy className="w-4 h-4" />}
             <span>{copied ? "文本已复制" : "复制文字战报"}</span>
           </button>
         </div>

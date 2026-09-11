@@ -32,25 +32,46 @@ export default function App() {
     }, 2800);
   };
 
-  // 1. 初始化登录与读取URL房间参数
+  // 1. 初始化登录与读取URL房间参数 (健壮容错，确保永不白屏卡死)
   useEffect(() => {
     const init = async () => {
+      let activeUser: UserSession = {
+        openid: `wx_user_${Math.random().toString(36).slice(2, 8)}`,
+        nickname: "推理特工",
+        avatarUrl: "https://api.dicebear.com/7.x/personas/svg?seed=detective",
+      };
+
       try {
         const storedUser = localStorage.getItem("ai_party_user");
-        const storedToken = localStorage.getItem("ai_impostor_token");
-        let activeUser: UserSession;
+        if (storedUser) {
+          try {
+            const parsed = JSON.parse(storedUser);
+            if (parsed && typeof parsed === "object" && parsed.openid && parsed.nickname) {
+              activeUser = parsed;
+            }
+          } catch {
+            // ignore corrupted localStorage
+          }
+        }
+      } catch {}
 
-        if (storedUser && storedToken) {
-          activeUser = JSON.parse(storedUser);
-          api.setToken(storedToken);
-        } else {
-          const loginRes = await api.login();
+      // 立即设定本地可用身份，避免屏幕处于等待状态
+      setUser(activeUser);
+
+      // 与服务器校验并获取/续签合法 Token
+      try {
+        const loginRes = await api.login(activeUser.nickname, activeUser.openid);
+        if (loginRes.user) {
           activeUser = loginRes.user;
+          setUser(activeUser);
           localStorage.setItem("ai_party_user", JSON.stringify(activeUser));
         }
-        setUser(activeUser);
+      } catch (err: any) {
+        console.warn("Server login sync error, operating with local session:", err);
+      }
 
-        // 检查URL是否携带roomCode参数 (微信好友分享直接唤醒)
+      // 检查URL是否携带roomCode参数 (微信好友分享直接唤醒)
+      try {
         const params = new URLSearchParams(window.location.search);
         const codeFromUrl = params.get("room");
         if (codeFromUrl && activeUser) {
@@ -66,7 +87,7 @@ export default function App() {
           }
         }
       } catch (err: any) {
-        console.error("Init login failed:", err);
+        console.warn("URL check failed:", err);
       }
     };
     init();
@@ -240,11 +261,24 @@ export default function App() {
     }
   };
 
-  const handleSubmitAction = async (type: ActionType, targetPlayerId?: string, content?: string) => {
+  const handleSubmitAction = async (
+    type: ActionType,
+    targetPlayerId?: string,
+    content?: string,
+    audioData?: string,
+    audioDuration?: number
+  ) => {
     if (!game || !currentPlayer) return;
     setLoading(true);
     try {
-      const res = await api.submitAction(game.gameId, type, targetPlayerId, content);
+      const res = await api.submitAction(
+        game.gameId,
+        type,
+        targetPlayerId,
+        content,
+        audioData,
+        audioDuration
+      );
       setGame(res.game);
       setRoom(res.room);
       showToast("行动已公开发表！");
@@ -253,6 +287,21 @@ export default function App() {
       showToast(`提交失败: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendVoiceMessage = async (
+    content: string,
+    audioData?: string,
+    audioDuration?: number
+  ) => {
+    if (!room || !currentPlayer) return;
+    try {
+      const res = await api.sendVoiceMessage(room.roomId, content, audioData, audioDuration);
+      setRoom(res.room);
+      showToast("语音消息已发送");
+    } catch (err: any) {
+      showToast(`语音发送失败: ${err.message}`);
     }
   };
 
@@ -333,6 +382,7 @@ export default function App() {
         <HomeScreen
           user={user}
           onUpdateUser={handleUpdateUser}
+          onUpdateNickname={(newName) => handleUpdateUser({ ...user, nickname: newName })}
           onCreateRoom={handleCreateRoom}
           onJoinRoom={handleJoinRoom}
           loading={loading}
@@ -349,7 +399,10 @@ export default function App() {
           onStartGame={handleStartGame}
           onAddBots={handleAddBots}
           onLeaveRoom={handleLeaveRoom}
+          onUpdateRoom={(newRoom) => setRoom(newRoom)}
           loading={loading}
+          onSendVoice={handleSendVoiceMessage}
+          voiceMessages={room.voiceMessages}
         />
       );
     }
@@ -388,6 +441,8 @@ export default function App() {
             onAdvancePhase={handleAdvancePhase}
             onTriggerBots={handleTriggerBots}
             loading={loading}
+            onSendVoice={handleSendVoiceMessage}
+            voiceMessages={room.voiceMessages}
           />
         );
 
@@ -439,7 +494,7 @@ export default function App() {
 
       {/* 浮动轻提示 Toast */}
       {toastMessage && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-neutral-850/95 border border-amber-500/50 text-amber-300 text-xs px-4 py-2 rounded-full shadow-2xl backdrop-blur animate-fade-in pointer-events-none flex items-center gap-1.5 whitespace-nowrap">
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-cyber-card/95 border border-neon-purple/50 text-neon-lightpurple text-xs px-4 py-2 rounded-full shadow-[0_0_15px_rgba(192,132,252,0.3)] backdrop-blur animate-fade-in pointer-events-none flex items-center gap-1.5 whitespace-nowrap">
           <span>{toastMessage}</span>
         </div>
       )}

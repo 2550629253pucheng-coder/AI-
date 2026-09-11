@@ -18,7 +18,8 @@ interface HomeScreenProps {
   user: User;
   onCreateRoom: () => void;
   onJoinRoom: (roomCode: string) => void;
-  onUpdateNickname: (nickname: string) => void;
+  onUpdateNickname?: (nickname: string) => void;
+  onUpdateUser?: (user: User) => void;
   loading: boolean;
 }
 
@@ -48,6 +49,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onCreateRoom,
   onJoinRoom,
   onUpdateNickname,
+  onUpdateUser,
   loading,
 }) => {
   const [code, setCode] = useState("");
@@ -65,8 +67,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   };
 
   const handleSaveNickname = () => {
-    if (nicknameInput.trim()) {
-      onUpdateNickname(nicknameInput.trim());
+    const trimmed = nicknameInput.trim();
+    if (trimmed) {
+      if (onUpdateNickname) {
+        onUpdateNickname(trimmed);
+      } else if (onUpdateUser) {
+        onUpdateUser({ ...user, nickname: trimmed });
+      }
     }
     setIsEditingName(false);
     audio.playClick();
@@ -80,13 +87,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between bg-neutral-900/90 border border-neutral-800 rounded-2xl p-3 shadow-lg"
+        className="flex items-center justify-between bg-white/95 dark:bg-cyber-card/90 border border-slate-200 dark:border-cyber-border rounded-2xl p-3 shadow-xs"
       >
         <div className="flex items-center space-x-3 flex-1 min-w-0 mr-2">
           <img
             src={user.avatarUrl}
             alt={user.nickname}
-            className="w-11 h-11 rounded-xl bg-neutral-800 border border-amber-500/40 p-0.5 object-cover shrink-0"
+            className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-cyber-mid border border-indigo-200 dark:border-neon-purple/50 p-0.5 object-cover shrink-0 shadow-2xs"
           />
           <div className="flex-1 min-w-0">
             {isEditingName ? (
@@ -96,12 +103,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   value={nicknameInput}
                   maxLength={12}
                   onChange={(e) => setNicknameInput(e.target.value)}
-                  className="bg-neutral-800 text-xs text-white px-2.5 py-1 rounded-xl border border-amber-500 focus:outline-none flex-1 min-w-0"
+                  className="bg-slate-100 dark:bg-cyber-deep text-xs text-slate-900 dark:text-white px-2.5 py-1 rounded-xl border border-indigo-300 dark:border-neon-lightpurple focus:outline-none flex-1 min-w-0"
                   autoFocus
                 />
                 <button
                   onClick={handleSaveNickname}
-                  className="text-xs bg-amber-500 hover:bg-amber-400 text-neutral-950 px-2.5 py-1 rounded-xl font-bold shrink-0"
+                  className="text-xs bg-gradient-to-r from-indigo-600 to-pink-500 text-white px-2.5 py-1 rounded-xl font-bold shrink-0 shadow-xs"
                   aria-label="确认修改昵称"
                 >
                   <Check className="w-3.5 h-3.5" />
@@ -118,16 +125,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 }}
                 className="flex items-center space-x-1.5 cursor-pointer group truncate"
               >
-                <span className="font-bold text-xs sm:text-sm text-neutral-100 group-hover:text-amber-300 transition truncate">
+                <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-neutral-100 group-hover:text-indigo-600 dark:group-hover:text-neon-lightpurple transition truncate">
                   {user.nickname}
                 </span>
-                <span className="text-xs bg-neutral-800 text-neutral-400 hover:text-amber-300 px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shrink-0">
+                <span className="text-[11px] bg-slate-100 dark:bg-cyber-deep/80 text-slate-500 dark:text-neutral-400 hover:text-indigo-600 dark:hover:text-neon-cyan px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shrink-0 border border-slate-200 dark:border-cyber-border-subtle">
                   <Edit2 className="w-2.5 h-2.5" /> 改名
                 </span>
               </div>
             )}
-            <div className="text-xs text-neutral-400 flex items-center gap-1 mt-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="text-xs text-slate-500 dark:text-neutral-400 flex items-center gap-1 mt-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-neon-teal animate-pulse shadow-xs" />
               <span>微信联机就绪 · 随时开黑</span>
             </div>
           </div>
@@ -138,7 +145,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             setShowRules(true);
             audio.playClick();
           }}
-          className="p-2 text-neutral-400 hover:text-amber-300 transition shrink-0 rounded-xl hover:bg-neutral-800"
+          className="p-2 text-slate-400 hover:text-indigo-600 dark:text-neutral-400 dark:hover:text-neon-cyan transition shrink-0 rounded-xl hover:bg-slate-100 dark:hover:bg-cyber-card-hover"
           title="玩法说明"
           aria-label="查看玩法规则说明"
         >
@@ -151,51 +158,51 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold mb-2"
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-neon-purple/15 border border-indigo-200 dark:border-neon-purple/35 text-indigo-700 dark:text-neon-lightpurple text-xs font-bold mb-2 shadow-xs"
         >
-          <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+          <Sparkles className="w-3.5 h-3.5 text-pink-500 animate-spin" />
           <span>Google Gemini AI 实时驱动推理</span>
         </motion.div>
 
-        <h1 className="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-100 via-amber-300 to-amber-500 drop-shadow-md">
+        <h1 className="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-slate-900 via-indigo-600 to-pink-600 dark:from-white dark:via-neon-lightpurple dark:to-neon-pink drop-shadow-xs">
           AI 局中局
         </h1>
-        <p className="text-xs text-neutral-400 mt-1 max-w-[280px] leading-relaxed">
+        <p className="text-xs text-slate-500 dark:text-neutral-400 mt-1 max-w-[280px] leading-relaxed font-medium">
           4～8人熟人社交解谜 · AI 导演实时推演突发反转
         </p>
 
         {/* 预留多主题切换卡槽 */}
         <div className="w-full mt-4 space-y-2">
-          <div className="flex items-center justify-between text-xs text-neutral-400 px-1">
-            <span className="flex items-center gap-1 font-semibold text-neutral-300">
-              <Compass className="w-3.5 h-3.5 text-amber-400" /> 选择剧本主题
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-neutral-400 px-1">
+            <span className="flex items-center gap-1 font-bold text-slate-700 dark:text-neutral-300">
+              <Compass className="w-3.5 h-3.5 text-indigo-600 dark:text-neon-cyan" /> 选择剧本主题
             </span>
-            <span className="text-xs text-neutral-400">{selectedThemeIndex + 1} / {THEMES.length}</span>
+            <span className="text-xs text-slate-400 dark:text-neutral-400">{selectedThemeIndex + 1} / {THEMES.length}</span>
           </div>
 
-          <div className="bg-gradient-to-br from-neutral-800/80 via-neutral-900/90 to-neutral-950 border border-neutral-700/70 rounded-2xl p-4 text-left shadow-xl relative overflow-hidden">
+          <div className="bg-white dark:bg-gradient-to-br dark:from-cyber-card dark:via-cyber-mid dark:to-cyber-deep border border-slate-200 dark:border-cyber-border rounded-2xl p-4 text-left shadow-xs relative overflow-hidden neon-glow-purple">
             <div className="flex items-center justify-between text-xs mb-1.5">
-              <span className="flex items-center gap-1 text-amber-300 font-semibold">
-                <Users className="w-3.5 h-3.5" /> {currentTheme.players}
+              <span className="flex items-center gap-1 text-indigo-600 dark:text-neon-cyan font-bold">
+                <Users className="w-3.5 h-3.5 text-indigo-600 dark:text-neon-cyan" /> {currentTheme.players}
               </span>
-              <span className="bg-neutral-800/90 text-neutral-300 px-2 py-0.5 rounded-full border border-neutral-700 text-xs flex items-center gap-1">
-                <Clock className="w-3 h-3 text-amber-400" /> {currentTheme.duration}
+              <span className="bg-slate-100 dark:bg-cyber-deep/80 text-slate-700 dark:text-neutral-300 px-2 py-0.5 rounded-full border border-slate-200 dark:border-cyber-border text-xs flex items-center gap-1 font-medium">
+                <Clock className="w-3 h-3 text-indigo-600 dark:text-neon-cyan" /> {currentTheme.duration}
               </span>
             </div>
 
-            <div className="text-sm font-bold text-neutral-100 mt-1 flex items-center justify-between">
+            <div className="text-sm font-black text-slate-900 dark:text-neutral-100 mt-1 flex items-center justify-between">
               <span>{currentTheme.title}</span>
-              <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/40">
+              <span className="text-xs bg-purple-100 dark:bg-neon-purple/20 text-purple-700 dark:text-neon-lightpurple px-2 py-0.5 rounded-md border border-purple-200 dark:border-neon-purple/40 font-bold">
                 {currentTheme.badge}
               </span>
             </div>
 
-            <p className="text-xs text-neutral-300 mt-2 leading-relaxed bg-neutral-950/60 p-2.5 rounded-xl border border-neutral-800">
+            <p className="text-xs text-slate-600 dark:text-neutral-300 mt-2 leading-relaxed bg-slate-50 dark:bg-cyber-deep/80 p-2.5 rounded-xl border border-slate-100 dark:border-cyber-border-subtle">
               {currentTheme.desc}
             </p>
 
             {/* 主题横向切换圆点 */}
-            <div className="flex items-center justify-center gap-2 mt-3 pt-2 border-t border-neutral-800/60">
+            <div className="flex items-center justify-center gap-2 mt-3 pt-2 border-t border-slate-100 dark:border-cyber-border-subtle">
               {THEMES.map((t, idx) => (
                 <button
                   key={t.id}
@@ -204,7 +211,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     setSelectedThemeIndex(idx);
                   }}
                   className={`h-1.5 rounded-full transition-all ${
-                    selectedThemeIndex === idx ? "w-6 bg-amber-400" : "w-1.5 bg-neutral-700"
+                    selectedThemeIndex === idx ? "w-6 bg-gradient-to-r from-indigo-600 to-pink-500 dark:from-neon-purple dark:to-neon-pink shadow-xs" : "w-1.5 bg-slate-200 dark:bg-cyber-border"
                   }`}
                   aria-label={`切换到剧本：${t.title}`}
                 />
@@ -222,15 +229,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             onCreateRoom();
           }}
           disabled={loading}
-          className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:scale-[0.99] text-neutral-950 font-bold text-sm rounded-2xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 transition disabled:opacity-50"
+          className="w-full py-3.5 btn-primary-neon active:scale-[0.99] text-white font-extrabold text-sm rounded-2xl flex items-center justify-center gap-2 transition disabled:opacity-50 shadow-md"
         >
-          <PlayCircle className="w-5 h-5 text-neutral-950" />
+          <PlayCircle className="w-5 h-5 text-white" />
           <span>{loading ? "正在创建房间..." : "创建房间 (当房主)"}</span>
         </button>
 
         {/* 房间码加入表单 */}
-        <form onSubmit={handleJoin} className="flex items-center space-x-2 bg-neutral-900/90 border border-neutral-800 rounded-2xl p-1.5 pl-3">
-          <KeyRound className="w-4 h-4 text-neutral-400 shrink-0" />
+        <form onSubmit={handleJoin} className="flex items-center space-x-2 bg-white/95 dark:bg-cyber-card/90 border border-slate-200 dark:border-cyber-border rounded-2xl p-1.5 pl-3 shadow-xs">
+          <KeyRound className="w-4 h-4 text-indigo-600 dark:text-neon-cyan shrink-0" />
           <input
             type="text"
             pattern="[0-9]*"
@@ -238,12 +245,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             placeholder="输入6位房间数字口令"
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-            className="flex-1 bg-transparent text-xs sm:text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none tracking-widest font-mono font-medium"
+            className="flex-1 bg-transparent text-xs sm:text-sm text-slate-900 dark:text-neutral-100 placeholder:text-slate-400 dark:placeholder:text-neutral-500 focus:outline-none tracking-widest font-mono font-bold"
           />
           <button
             type="submit"
             disabled={code.length !== 6 || loading}
-            className="bg-neutral-800 hover:bg-amber-500 hover:text-neutral-950 disabled:opacity-40 disabled:hover:bg-neutral-800 disabled:hover:text-neutral-400 text-neutral-300 px-4 py-2 rounded-xl text-xs font-bold transition"
+            className="btn-secondary-cyan px-4 py-2 rounded-xl text-xs font-bold transition disabled:opacity-40"
           >
             进入
           </button>
@@ -254,7 +261,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       <AnimatePresence>
         {showRules && (
           <div 
-            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 bg-black/60 dark:bg-black/85 backdrop-blur-xs flex items-center justify-center p-4"
             onClick={() => setShowRules(false)}
             role="dialog"
             aria-modal="true"
@@ -265,43 +272,43 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.94 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-neutral-900 border border-neutral-700 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl"
+              className="bg-white dark:bg-cyber-card border border-slate-200 dark:border-cyber-border-bright rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-xl neon-glow-purple"
             >
-              <div className="flex items-center justify-between border-b border-neutral-800 pb-2.5">
-                <span className="text-amber-400 font-bold text-sm flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4" /> 《AI局中局》玩法指南
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-cyber-border-subtle pb-2.5">
+                <span className="text-indigo-700 dark:text-neon-lightpurple font-bold text-sm flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-pink-500" /> 《AI局中局》玩法指南
                 </span>
                 <button
                   onClick={() => setShowRules(false)}
-                  className="text-neutral-400 hover:text-white p-1 rounded-full"
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-full hover:bg-slate-100 dark:hover:bg-cyber-card-hover"
                   aria-label="关闭指南"
                 >
                   ✕
                 </button>
               </div>
 
-              <div className="text-xs text-neutral-300 space-y-2.5 max-h-72 overflow-y-auto pr-1 leading-relaxed">
+              <div className="text-xs text-slate-700 dark:text-neutral-300 space-y-2.5 max-h-72 overflow-y-auto pr-1 leading-relaxed">
                 <div>
-                  <strong className="text-amber-300 block mb-0.5">1. 身份分配与隐秘任务</strong>
+                  <strong className="text-sky-700 dark:text-neon-cyan block mb-0.5">1. 身份分配与隐秘任务</strong>
                   <p>开局每人分配一个公开职务（如技术总监、财务总监）与绝密个人身份（普通员工 vs 商业内鬼）。</p>
                 </div>
                 <div>
-                  <strong className="text-amber-300 block mb-0.5">2. 三轮博弈与陈述</strong>
+                  <strong className="text-indigo-700 dark:text-neon-lightpurple block mb-0.5">2. 三轮博弈与陈述</strong>
                   <p>共进行 3 轮推演。每轮中玩家可进行质询、辩护或披露情报，全场公开记录。</p>
                 </div>
                 <div>
-                  <strong className="text-rose-400 block mb-0.5">3. AI导演第3轮突发反转</strong>
+                  <strong className="text-pink-700 dark:text-neon-magenta block mb-0.5">3. AI导演第3轮突发反转</strong>
                   <p>在第 3 轮，Gemini AI 导演将通盘分析前两轮各人言论矛盾，抛出颠覆性的突发证据！</p>
                 </div>
                 <div>
-                  <strong className="text-amber-300 block mb-0.5">4. 终极投票指认与AI复盘</strong>
+                  <strong className="text-teal-700 dark:text-neon-teal block mb-0.5">4. 终极投票指认与AI复盘</strong>
                   <p>全员无记名指认真凶。投票结束后 AI 实时输出毒舌复盘报告与全员幽默封号！</p>
                 </div>
               </div>
 
               <button
                 onClick={() => setShowRules(false)}
-                className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs rounded-xl transition"
+                className="w-full py-2.5 btn-primary-neon text-white font-bold text-xs rounded-xl transition"
               >
                 我已经明白规则
               </button>

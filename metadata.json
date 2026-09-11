@@ -1,6 +1,6 @@
 {
   "name": "AI局中局",
   "description": "微信小游戏《AI局中局》MVP首发「AI内鬼局」：4~8人熟人社交推理解谜，AI导演实时生成剧情反转与赛后复盘报告。",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

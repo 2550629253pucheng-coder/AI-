@@ -6,6 +6,8 @@ import dotenv from "dotenv";
 import { GameEngine } from "./server/gameEngine.js";
 import { issueToken, verifyToken, playerIdOf } from "./server/auth.js";
 import { ErrorCode } from "./src/types/game.js";
+import { PRESET_THEMES } from "./server/templates.js";
+import { AIGateway } from "./server/aiGateway.js";
 
 dotenv.config();
 
@@ -22,7 +24,7 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "10mb" }));
 
   const engine = GameEngine.getInstance();
 
@@ -50,9 +52,8 @@ async function startServer() {
   app.post("/api/login", (req, res) => {
     try {
       const { nickname, avatarUrl, customOpenid } = req.body || {};
-      const isDev = process.env.NODE_ENV !== "production";
       const openid =
-        isDev && customOpenid
+        customOpenid && typeof customOpenid === "string" && customOpenid.length >= 8
           ? String(customOpenid)
           : `wx_user_${crypto.randomBytes(4).toString("hex")}`;
 
@@ -140,6 +141,37 @@ async function startServer() {
     }
   });
 
+  // 获取预设剧本列表 (Custom Scenarios)
+  app.get("/api/themes/presets", (req, res) => {
+    res.json({ success: true, themes: PRESET_THEMES });
+  });
+
+  // AI 快速生成定制剧本 (Custom Scenario AI Generator)
+  app.post("/api/theme/generate", requireAuth, async (req, res) => {
+    try {
+      const { prompt } = req.body || {};
+      const aiGateway = AIGateway.getInstance();
+      const theme = await aiGateway.generateCustomTheme(prompt || "");
+      res.json({ success: true, theme });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 房主更换或设定房间剧本
+  app.post("/api/room/theme", requireAuth, (req, res) => {
+    try {
+      const { roomId, theme } = req.body;
+      if (!roomId || !theme) {
+        return res.status(400).json({ success: false, error: "PARAMS_REQUIRED" });
+      }
+      const room = engine.setRoomTheme(roomId, theme, req.playerId!);
+      res.json({ success: true, room });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
   // 获取房间与游戏公共状态
   app.get("/api/room/:roomId", (req, res) => {
     try {
@@ -184,11 +216,39 @@ async function startServer() {
     }
   });
 
-  // 提交玩家行动
+  // 提交玩家行动 (支持语音录音与语音识别内容)
   app.post("/api/game/action", requireAuth, (req, res) => {
     try {
-      const { gameId, type, targetPlayerId, content } = req.body;
-      const result = engine.submitAction(gameId, req.playerId!, type, targetPlayerId, content);
+      const { gameId, type, targetPlayerId, content, audioData, audioDuration } = req.body;
+      const result = engine.submitAction(
+        gameId,
+        req.playerId!,
+        type,
+        targetPlayerId,
+        content,
+        audioData,
+        audioDuration
+      );
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // 发送房间语音交流 / 对讲消息 (不想打字时直接按住说话或发语音玩)
+  app.post("/api/room/voice", requireAuth, (req, res) => {
+    try {
+      const { roomId, content, audioData, audioDuration } = req.body;
+      if (!roomId) {
+        return res.status(400).json({ success: false, error: "ROOM_ID_REQUIRED" });
+      }
+      const result = engine.sendVoiceMessage(
+        roomId,
+        req.playerId!,
+        content,
+        audioData,
+        audioDuration
+      );
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });

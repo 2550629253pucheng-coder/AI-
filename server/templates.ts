@@ -207,6 +207,197 @@ export const COMPANY_THEME: ThemeTemplate = {
   ]
 };
 
+export const TRAP_MISSIONS = [
+  { keyword: "加班", description: "诱导任意好人在公开发言中主动说出「加班」" },
+  { keyword: "发誓", description: "诱导任意好人在公开发言中主动说出「发誓」或「我发誓」" },
+  { keyword: "监控", description: "诱导任意好人在公开发言中主动说出「监控」" },
+  { keyword: "不信", description: "诱导任意好人在公开发言中主动说出「不信」" },
+  { keyword: "年终奖", description: "诱导任意好人在公开发言中主动说出「年终奖」" },
+  { keyword: "背锅", description: "诱导任意好人在公开发言中主动说出「背锅」" },
+  { keyword: "证据", description: "诱导任意好人在公开发言中主动说出「证据」" },
+  { keyword: "清白", description: "诱导任意好人在公开发言中主动说出「清白」" },
+  { keyword: "开玩笑", description: "诱导任意好人在公开发言中主动说出「开玩笑」" },
+  { keyword: "查账", description: "诱导任意好人在公开发言中主动说出「查账」" },
+];
+
+export const LIVESTREAM_THEME: ThemeTemplate = {
+  themeId: "livestream_disaster",
+  themeName: "电商直播翻车案 · 恶意0元购",
+  background: "昨晚破亿GMV的年中大促直播间，一款原价9999元的旗舰手机被神秘人改成了『0元秒杀』，瞬间被薅走上万台！负责商品链接配置、运营、中控和主播全员被召集紧急复盘。",
+  roles: [
+    {
+      roleName: "王牌带货主播",
+      duty: "负责台前叫卖促单，掌握全场节奏",
+      defaultSecret: "你在开播前10分钟，曾催促运营赶紧把秒杀链接挂上，没仔细看后台价格确认单。",
+      defaultMission: "证明自己的口播节奏无误，把责任从直播表现上剥离。",
+      knownClues: ["中控台在20:15分曾经发生过一次断网重连。", "老板在直播间特意强调过这款手机利润极薄。"]
+    },
+    {
+      roleName: "核心运营主管",
+      duty: "掌管商家后台价格配置与优惠券生成",
+      defaultSecret: "你昨晚因连轴加班昏昏欲睡，但你清晰记得自己在后台输入的是9999元并点击了二级审核。",
+      defaultMission: "找出谁动了你的电脑后台，证明不是你手抖输错价格。",
+      knownClues: ["后台修改日志的IP地址居然来自直播间现场的公用Wi-Fi。", "桌上留着一张写有管理员临时密码的便签。"]
+    },
+    {
+      roleName: "中控台技术",
+      duty: "负责直播推流设备、上架弹窗与网络环境",
+      defaultSecret: "昨晚商品弹窗突然弹出时，你发现弹窗标题多了两个特殊字符，像是被脚本批量替换的。",
+      defaultMission: "利用技术排查洗清自己的嫌疑，指出真正上传异常数据的人。",
+      knownClues: ["现场有一部没有插SIM卡的备用手机曾经连接过中控蓝牙。", "推流电脑的浏览记录里有二手倒卖群的网页。"]
+    },
+    {
+      roleName: "商家驻场代表",
+      duty: "监督品牌价格形象，核实库存损耗",
+      defaultSecret: "你其实在秒杀开始前30秒就发现了价格异常，但当时因为跟运营有私人过节犹豫了一下没喊停。",
+      defaultMission: "隐藏自己知情不报的失职，引导大家把焦点放在恶意修改者身上。",
+      knownClues: ["今早已经有黄牛群在低价出这批订单提货码。", "现场某人在秒杀爆发时嘴角露出过一丝笑意。"]
+    },
+    {
+      roleName: "场控小助理",
+      duty: "搬运样品、递纸巾并管理现场人员出入",
+      defaultSecret: "你昨晚在洗手间听到有人兴奋地发语音说：『今晚准备大赚一笔换新车』。",
+      defaultMission: "让大家相信你的证言，别被当做替罪羊。",
+      knownClues: ["洗手间走出来的人穿了一件黑色连帽衫。", "更衣室垃圾桶里有一盒被撕碎的手机包装条码。"]
+    },
+    {
+      roleName: "品牌合伙人",
+      duty: "统筹全盘，负责最终盈亏问责",
+      defaultSecret: "公司后台其实设定了『单笔最高亏损预警』，但昨晚这道防火墙被人故意关闭了。",
+      defaultMission: "揪出团队里的蛀虫，挽回品牌声誉和重大经济损失。",
+      knownClues: ["关闭防火墙的权限只有高管和技术核心账号拥有。", "昨晚直播间门禁在事故发生后有人匆忙跑出大楼。"]
+    }
+  ],
+  spySecrets: [
+    {
+      secret: "正是你提前串通黄牛工作室，利用备用设备植入篡改脚本修改了商品券！",
+      mission: "极力隐藏内鬼身份，将锅甩给运营的手误或者中控网络故障！",
+      knownInformation: ["你知道脚本的具体生效时间在20:18分。", "只要投票不被抓，黄牛分润几百万就能到手！"]
+    }
+  ],
+  normalSecretsPool: [
+    {
+      secret: "你昨晚忙于对接水军控评，没有碰过任何商品价格配置后台。",
+      mission: "比对大家的行动轨迹，找出那个真正有作案时间和动机的内鬼。",
+      knownInformation: ["昨晚20:10分左右现场有人动过前台主机。"]
+    }
+  ],
+  openingEvents: [
+    {
+      title: "第一轮事件 · 诡异的后台操作IP",
+      description: "AI导演锁定服务器审计日志：恶意0元购发生前3分钟，一个匿名设备通过直播间内网向价格库发送了强制覆盖指令！",
+      publicClue: "公共线索：指令来源设备是一台iOS设备，且带有蓝牙调试标记。",
+      discussionPrompt: "昨晚在场谁一直在摆弄手机或具备后台权限？请交代你们的操作！"
+    }
+  ],
+  round2Events: [
+    {
+      title: "第二轮追加线索 · 微信黄牛群的神秘截图",
+      description: "AI导演截获某大型薅羊毛群的爆料图：早在秒杀前2小时，就有人预告了『今晚某头部直播间有万台0元机』！",
+      publicClue: "公共线索：爆料截图中的手机电量和顶部通知栏暴露了一个特殊APP的图标。",
+      discussionPrompt: "内鬼早就提前策划好了一切！对照各自的工作习惯与言辞破绽！"
+    }
+  ],
+  twistFallbacks: [
+    {
+      title: "第三轮AI反转 · 消失的权限回收记录",
+      description: "AI导演深度复盘安全网关日志：原本被大家指责为失职的人，其账号在案发时其实处于被锁死状态！真正的改价者伪造了他人的登录态！",
+      publicClue: "反转线索：真正操作者在直播间假装十分焦急，却在关键时刻引导大家去排查外部黑客！",
+      discussionPrompt: "现在，全场最具嫌疑的人瞬间逆转！谁在故意把水搅浑？"
+    }
+  ]
+};
+
+export const CAMPUS_THEME: ThemeTemplate = {
+  themeId: "campus_night",
+  themeName: "大学宿舍 · 深夜失窃的绝版外卖",
+  background: "凌晨1点，期末周的404男生宿舍，期盼已久、排队3小时才买到的限量版绝味烤串外卖在门口走廊凭空消失！只留下一袋撕开的湿纸巾与扑鼻的孜然香气。",
+  roles: [
+    {
+      roleName: "舍长(学霸)",
+      duty: "统筹寝室纪律与熄灯作息",
+      defaultSecret: "你昨晚在走廊背英语单词到凌晨1点，隐约看到走廊尽头有个鬼祟的身影在嚼东西。",
+      defaultMission: "用缜密的逻辑维护寝室正义，找出谁偷吃了兄弟们的大餐。",
+      knownClues: ["走廊声控灯昨晚坏了两个。", "垃圾桶旁有一根带有骨肉相连印记的竹签。"]
+    },
+    {
+      roleName: "电竞大神",
+      duty: "夜夜通宵排位，掌握深夜网速与门外动静",
+      defaultSecret: "你昨晚戴着降噪耳机打排位，但中间下楼打过一次开水，路过门外时外卖还在。",
+      defaultMission: "证明自己专注电竞毫无作案时间，找出真正嘴馋的罪魁祸首。",
+      knownClues: ["隔壁402宿舍昨晚有人聚众打扑克。", "门缝底下曾飘进过浓郁的麻辣孜然味。"]
+    },
+    {
+      roleName: "健身达人",
+      duty: "严格控制热量与蛋白质摄入",
+      defaultSecret: "你昨晚断碳水饥肠辘辘，梦里全是肉串，但你坚称自己喝了蛋白粉就睡了。",
+      defaultMission: "证明自己拥有严苛的自律意志，绝不可能是偷吃宵夜的人！",
+      knownClues: ["洗漱台上有一滴疑似甜面酱的污渍。", "有人昨晚悄悄开过窗户散味。"]
+    },
+    {
+      roleName: "隔壁蹭网常客",
+      duty: "常年混迹404寝室蹭空调蹭网",
+      defaultSecret: "你昨晚在404宿舍沙发上刷短视频到12:40，离开时顺手拿了张纸巾擦汗。",
+      defaultMission: "洗清自己外人作案的重大嫌疑，找出404内部的偷吃真凶。",
+      knownClues: ["404某人今天的书包里散发着挥之不去的烧烤香味。", "宿管阿姨昨晚12点半就锁了大门。"]
+    }
+  ],
+  spySecrets: [
+    {
+      secret: "正是你忍不住诱惑，在走廊黑灯瞎火中把整袋烤串偷偷拿回床帘里炫完了！",
+      mission: "打死不承认！把怀疑引向外卖员送错或者隔壁寝室路过顺走！",
+      knownInformation: ["你把吃剩的竹签藏在了上铺床垫夹层里。", "只要熬过投票，明天大家就会把这事当成未解之谜！"]
+    }
+  ],
+  normalSecretsPool: [
+    {
+      secret: "你昨晚肚子疼跑了3次卫生间，每次出来走廊都静悄悄的。",
+      mission: "比对大家的时间差，抓出那个满嘴谎言的偷吃内鬼！",
+      knownInformation: ["凌晨00:50分听到过走廊塑料袋沙沙作响。"]
+    }
+  ],
+  openingEvents: [
+    {
+      title: "第一轮事件 · 门把手上的孜然指纹",
+      description: "AI导演勘察案发现场：门外放置外卖的凳子上只剩塑料袋底托，门外把手上检测到了高浓度的孜然与特辣辣椒面痕迹！",
+      publicClue: "公共线索：作案者是用右手握住门把手的，指尖留有微量酱汁。",
+      discussionPrompt: "昨晚谁碰过门把手？谁在深夜离开过寝室？快坦白！"
+    }
+  ],
+  round2Events: [
+    {
+      title: "第二轮追加线索 · 宿管走廊监控的模糊反光",
+      description: "AI导演调取楼道监控：虽然夜视模糊，但00:55分有一道穿着灰色睡裤的身影出现在外卖摆放点！",
+      publicClue: "公共线索：嫌疑人身材中等，且吃完后有一系列舔手指的动作！",
+      discussionPrompt: "对照各自身份和昨晚穿着，有人在隐瞒自己的作案动机！"
+    }
+  ],
+  twistFallbacks: [
+    {
+      title: "第三轮AI反转 · 床帘缝隙漏出的微弱气味",
+      description: "AI导演启动空气动力学分析：走廊窗户是通风口，真正的气味源头根本不是从门外飘进来的，而是从宿舍内某位同学的床铺正上方飘散开的！",
+      publicClue: "反转线索：偷吃者就藏在寝室内部！而且昨晚一直在假装义愤填膺，疯狂帮失主骂小偷！",
+      discussionPrompt: "好一招贼喊捉贼！谁昨晚骂得最凶、分析得最起劲，谁就是内鬼！"
+    }
+  ]
+};
+
+export const PRESET_THEMES: ThemeTemplate[] = [
+  COMPANY_THEME,
+  LIVESTREAM_THEME,
+  CAMPUS_THEME,
+];
+
+export function getThemeById(themeId?: string): ThemeTemplate {
+  if (!themeId) return COMPANY_THEME;
+  const found = PRESET_THEMES.find((t) => t.themeId === themeId);
+  return found || COMPANY_THEME;
+}
+
+export function getRandomTrapMission() {
+  return TRAP_MISSIONS[Math.floor(Math.random() * TRAP_MISSIONS.length)];
+}
+
 export const FALLBACK_REPORTS: Record<Team, {
   summary: string;
   bestDetective: string;

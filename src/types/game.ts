@@ -54,6 +54,16 @@ export interface RoomPlayer {
   voteCount?: number;
 }
 
+export interface TrapMission {
+  id: string;
+  keyword: string;
+  description: string;
+  achieved: boolean;
+  victimPlayerId?: string;
+  victimPlayerName?: string;
+  triggeredAt?: number;
+}
+
 export interface PlayerSecret {
   playerId: string;
   team: Team;
@@ -62,6 +72,7 @@ export interface PlayerSecret {
   mission: string;
   knownInformation: string[];
   ability?: string;
+  trapMission?: TrapMission;
 }
 
 export interface GameEvent {
@@ -87,6 +98,20 @@ export interface PlayerAction {
   targetPlayerId?: string;
   targetPlayerName?: string;
   content: string;
+  audioData?: string; // base64 DataURL 语音录音
+  audioDuration?: number; // 录音时长(秒)
+  createdAt: number;
+}
+
+export interface RoomVoiceMessage {
+  messageId: string;
+  roomId: string;
+  playerId: string;
+  playerName: string;
+  avatarUrl: string;
+  content: string; // 语音识别文字或输入文字
+  audioData?: string; // 真实录音 base64 DataURL
+  audioDuration?: number; // 录音时长(秒)
   createdAt: number;
 }
 
@@ -111,6 +136,12 @@ export interface PlayerReport {
   funniestMoment: string; // 爆笑名场面
   biggestTwist: string; // 最大反转
   playerTags: PlayerTag[];
+  trapAchievement?: {
+    spyName: string;
+    keyword: string;
+    victimName: string;
+    bonusNotice: string;
+  };
 }
 
 export interface Game {
@@ -119,6 +150,7 @@ export interface Game {
   phase: GamePhase;
   themeId: string;
   themeName: string;
+  themeBackground?: string;
   round: number;
   startedAt: number;
   endedAt?: number;
@@ -129,6 +161,7 @@ export interface Game {
   actions: PlayerAction[];
   votes: Vote[];
   report?: PlayerReport;
+  trapTriggered?: boolean;
   version: number;
 }
 
@@ -140,9 +173,14 @@ export interface Room {
   minPlayers: number;
   maxPlayers: number;
   currentGameId?: string;
+  themeId?: string;
+  themeName?: string;
+  themeBackground?: string;
+  customTheme?: any;
   createdAt: number;
   expiresAt: number;
   players: RoomPlayer[];
+  voiceMessages?: RoomVoiceMessage[];
 }
 
 export enum ErrorCode {

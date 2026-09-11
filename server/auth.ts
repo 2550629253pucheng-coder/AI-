@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const SECRET = process.env.SESSION_SECRET || "ai_impostor_cyber_secret_2026_stable_fixed_key";
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** playerId 的唯一真源，gameEngine 里的拼接调用它 */
