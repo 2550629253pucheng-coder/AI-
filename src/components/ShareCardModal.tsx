@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { Copy, Check, X, Sparkles, Trophy, Skull } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Copy, Check, X, Sparkles, Download, Image as ImageIcon } from "lucide-react";
+import { motion } from "motion/react";
 import { Game, RoomPlayer, Team } from "../types/game.js";
 import { audio } from "../utils/audio.js";
 
@@ -11,10 +12,12 @@ interface ShareCardModalProps {
 
 export const ShareCardModal: React.FC<ShareCardModalProps> = ({
   game,
-  roomPlayers,
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(true);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const isNormalWin = game.winnerTeam === Team.NORMAL;
   const spy = game.revealedSpies?.[0];
@@ -22,11 +25,214 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
 
   const shareText = `【AI局中局 · 战报】
 我们在《${game.themeName}》经历了一场激战！
-结果：${isNormalWin ? "普通员工大获全胜，逮捕内鬼！" : "内鬼高超潜伏，成功脱身！"}
+结果：${isNormalWin ? "普通员工大获全胜，成功缉拿内鬼！" : "内鬼隐匿极深，成功带节奏脱身！"}
 🕵️ 真正内鬼：${spy ? `${spy.name} (${spy.roleName})` : "隐藏极深"}
 🏆 推理王：${report?.bestDetective || "全场MVP"}
-🎭 演技大奖：${report?.bestActor || "影帝级别"}
-快来一起玩《AI局中局》微信小游戏！`;
+🎭 演技大奖：${report?.bestActor || "影帝级表现"}
+快来一起玩微信小游戏《AI局中局》！`;
+
+  // 使用 HTML5 Canvas 绘制 2x Retina 高清战绩海报
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const width = 640;
+    const height = 880;
+    canvas.width = width;
+    canvas.height = height;
+
+    // 1. 背景暗夜渐变
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+    bgGrad.addColorStop(0, "#171717");
+    bgGrad.addColorStop(0.5, "#0c0a09");
+    bgGrad.addColorStop(1, "#000000");
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    // 2. 装饰性网格与金光
+    ctx.save();
+    ctx.strokeStyle = "rgba(245, 158, 11, 0.08)";
+    ctx.lineWidth = 1;
+    for (let x = 30; x < width; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    for (let y = 30; y < height; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    // 顶部与中心琥珀微光
+    const radialGrad = ctx.createRadialGradient(width / 2, 140, 10, width / 2, 140, 260);
+    radialGrad.addColorStop(0, "rgba(245, 158, 11, 0.18)");
+    radialGrad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = radialGrad;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+
+    // 3. 边框线与内框
+    ctx.save();
+    ctx.strokeStyle = "rgba(245, 158, 11, 0.4)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(24, 24, width - 48, height - 48);
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(32, 32, width - 64, height - 64);
+    ctx.restore();
+
+    // 4. 头部 Header
+    ctx.fillStyle = "#f59e0b";
+    ctx.font = "bold 20px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("✦ AI 局 中 局 · 终 局 战 报 ✦", width / 2, 75);
+
+    ctx.fillStyle = "#a3a3a3";
+    ctx.font = "16px sans-serif";
+    ctx.fillText("微信社交推理小游戏 · AI导演实时推演", width / 2, 105);
+
+    // 5. 剧本主题大标题
+    ctx.fillStyle = "#fafafa";
+    ctx.font = "bold 32px sans-serif";
+    ctx.fillText(game.themeName.split("·")[0].trim(), width / 2, 160);
+
+    // 6. 胜负大徽章
+    const badgeY = 195;
+    ctx.save();
+    ctx.fillStyle = isNormalWin ? "rgba(14, 165, 233, 0.2)" : "rgba(244, 63, 94, 0.2)";
+    ctx.strokeStyle = isNormalWin ? "rgba(14, 165, 233, 0.7)" : "rgba(244, 63, 94, 0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(width / 2 - 180, badgeY, 360, 52, 26);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isNormalWin ? "#38bdf8" : "#fb7185";
+    ctx.font = "bold 24px sans-serif";
+    ctx.fillText(isNormalWin ? "🛡️ 普通员工阵营大获全胜！" : "🕵️ 内鬼阵营成功潜伏胜出！", width / 2, badgeY + 35);
+    ctx.restore();
+
+    // 7. 详细对局信息框
+    const boxY = 275;
+    ctx.save();
+    ctx.fillStyle = "rgba(23, 23, 23, 0.9)";
+    ctx.strokeStyle = "rgba(64, 64, 64, 0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(48, boxY, width - 96, 420, 20);
+    ctx.fill();
+    ctx.stroke();
+
+    // 真正内鬼公示
+    ctx.textAlign = "left";
+    let curY = boxY + 45;
+    ctx.fillStyle = "#f43f5e";
+    ctx.font = "bold 20px sans-serif";
+    ctx.fillText("【🕵️ 真正内鬼】", 72, curY);
+    ctx.fillStyle = "#fecdd3";
+    ctx.font = "18px sans-serif";
+    ctx.fillText(spy ? `${spy.name}（担任职务：${spy.roleName}）` : "隐藏至深，未被当场抓获", 220, curY);
+
+    // 分割线
+    curY += 30;
+    ctx.strokeStyle = "rgba(64, 64, 64, 0.5)";
+    ctx.beginPath();
+    ctx.moveTo(72, curY);
+    ctx.lineTo(width - 72, curY);
+    ctx.stroke();
+
+    // 推理王
+    curY += 45;
+    ctx.fillStyle = "#f59e0b";
+    ctx.font = "bold 20px sans-serif";
+    ctx.fillText("【🏆 逻辑推理王】", 72, curY);
+    ctx.fillStyle = "#fde68a";
+    ctx.font = "18px sans-serif";
+    ctx.fillText(report?.bestDetective || "全场普通员工", 240, curY);
+
+    // 最佳演技
+    curY += 50;
+    ctx.fillStyle = "#fb7185";
+    ctx.font = "bold 20px sans-serif";
+    ctx.fillText("【🎭 最佳演技奖】", 72, curY);
+    ctx.fillStyle = "#fecdd3";
+    ctx.font = "18px sans-serif";
+    ctx.fillText(report?.bestActor || "神秘影帝", 240, curY);
+
+    // 分割线
+    curY += 30;
+    ctx.strokeStyle = "rgba(64, 64, 64, 0.5)";
+    ctx.beginPath();
+    ctx.moveTo(72, curY);
+    ctx.lineTo(width - 72, curY);
+    ctx.stroke();
+
+    // AI复盘点评
+    curY += 40;
+    ctx.fillStyle = "#a3a3a3";
+    ctx.font = "bold 16px sans-serif";
+    ctx.fillText("✦ AI 导演深度复盘点评：", 72, curY);
+
+    curY += 28;
+    ctx.fillStyle = "#e5e5e5";
+    ctx.font = "15px sans-serif";
+    const summaryText = report?.summary || "这是一场惊心动魄的职场智斗，每个人都在怀疑与被怀疑中步步为营。";
+    // 文本换行渲染
+    const maxCharsPerLine = 26;
+    for (let i = 0; i < summaryText.length && i < maxCharsPerLine * 3; i += maxCharsPerLine) {
+      const line = summaryText.slice(i, i + maxCharsPerLine);
+      ctx.fillText(line, 72, curY);
+      curY += 24;
+    }
+
+    // 名场面
+    if (report?.funniestMoment) {
+      curY += 10;
+      ctx.fillStyle = "#38bdf8";
+      ctx.font = "italic 15px sans-serif";
+      ctx.fillText(`“名场面：${report.funniestMoment.slice(0, 30)}...”`, 72, curY);
+    }
+    ctx.restore();
+
+    // 8. 底部二维码/房间召唤文案
+    const footerY = 740;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f59e0b";
+    ctx.font = "bold 18px monospace";
+    ctx.fillText(`房号对决档案：#${game.gameId.slice(-6).toUpperCase()}`, width / 2, footerY);
+
+    ctx.fillStyle = "#737373";
+    ctx.font = "14px sans-serif";
+    ctx.fillText("微信扫码或输入房间号，即刻开启下一局深夜对决！", width / 2, footerY + 30);
+    ctx.fillText("长按或点击下方按钮保存本战绩海报", width / 2, footerY + 54);
+
+    // 导出 DataURL
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      setImageUrl(dataUrl);
+    } catch (e) {
+      console.warn("Canvas toDataURL failed:", e);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [game, isNormalWin, spy, report]);
+
+  const handleDownload = () => {
+    if (!imageUrl) return;
+    audio.playClick();
+    const a = document.createElement("a");
+    a.href = imageUrl;
+    a.download = `AI局中局_战报_${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   const copyText = () => {
     navigator.clipboard.writeText(shareText);
@@ -36,82 +242,78 @@ export const ShareCardModal: React.FC<ShareCardModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-neutral-900 border border-neutral-700 rounded-3xl p-5 max-w-xs w-full shadow-2xl space-y-4 relative">
+    <div 
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="战报海报分享弹窗"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.94 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-neutral-900 border border-neutral-700 rounded-3xl p-4 sm:p-5 max-w-sm w-full shadow-2xl space-y-3 relative max-h-[92vh] flex flex-col"
+      >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-neutral-400 hover:text-white p-1"
+          className="absolute top-4 right-4 text-neutral-400 hover:text-white p-1 rounded-full hover:bg-neutral-800 transition"
+          aria-label="关闭弹窗"
         >
           <X className="w-5 h-5" />
         </button>
 
-        {/* 微信风格分享小卡片 */}
-        <div className="bg-gradient-to-b from-neutral-950 via-neutral-900 to-neutral-950 border border-amber-500/40 rounded-2xl p-4 text-center shadow-lg space-y-3">
-          <div className="flex items-center justify-center gap-1 text-[11px] text-amber-400 font-bold tracking-wider">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>AI局中局 · 微信战绩分享</span>
-          </div>
-
-          <h4 className="text-base font-black text-neutral-100">
-            {game.themeName.split("·")[0]}
-          </h4>
-
-          <div
-            className={`py-1.5 px-3 rounded-full text-xs font-bold inline-block ${
-              isNormalWin
-                ? "bg-sky-500/20 text-sky-400 border border-sky-500/40"
-                : "bg-rose-500/20 text-rose-400 border border-rose-500/40"
-            }`}
-          >
-            {isNormalWin ? "普通员工胜利！" : "内鬼阵营胜利！"}
-          </div>
-
-          <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-3 text-left text-xs space-y-1.5 text-neutral-300">
-            {spy && (
-              <div className="flex items-center gap-1.5">
-                <Skull className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span>
-                  真正内鬼：<strong className="text-rose-400">{spy.name} ({spy.roleName})</strong>
-                </span>
-              </div>
-            )}
-            {report?.bestDetective && (
-              <div className="flex items-center gap-1.5">
-                <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="truncate">
-                  推理王：<strong className="text-amber-300">{report.bestDetective}</strong>
-                </span>
-              </div>
-            )}
-            {report?.funniestMoment && (
-              <div className="flex items-start gap-1.5 text-[11px] text-neutral-400 italic">
-                <span>💬 {report.funniestMoment}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="text-[10px] text-neutral-500">
-            微信扫码或输入房间号，随时加入对战
-          </div>
+        <div className="flex items-center gap-1.5 text-xs text-amber-400 font-bold tracking-wide">
+          <Sparkles className="w-4 h-4" />
+          <span>微信战绩分享海报</span>
         </div>
 
-        {/* 操作按钮 */}
-        <div className="space-y-2">
+        {/* 隐藏绘制用 Canvas */}
+        <canvas ref={canvasRef} className="hidden" />
+
+        {/* 图片预览区 */}
+        <div className="flex-1 overflow-y-auto rounded-2xl bg-neutral-950 border border-neutral-800 flex items-center justify-center p-2 min-h-[300px]">
+          {isGenerating ? (
+            <div className="text-center py-12 text-xs text-neutral-400 space-y-2">
+              <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p>AI 正在渲染高清对局海报...</p>
+            </div>
+          ) : imageUrl ? (
+            <img
+              src={imageUrl}
+              alt="对局战报海报"
+              className="w-full h-auto rounded-xl shadow-lg border border-amber-500/30 object-contain"
+            />
+          ) : (
+            <div className="text-center text-xs text-neutral-500">海报生成受阻，请直接复制文字战报</div>
+          )}
+        </div>
+
+        <p className="text-[11px] text-neutral-400 text-center">
+          手机端可长按图片直接发送给微信好友或保存相册
+        </p>
+
+        {/* 动作栏 */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            onClick={handleDownload}
+            disabled={!imageUrl}
+            className="py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 text-neutral-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow transition disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" />
+            <span>保存海报图片</span>
+          </button>
+
           <button
             onClick={copyText}
-            className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 text-neutral-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow"
+            className="py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition border border-neutral-700"
           >
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            <span>{copied ? "战报已复制到剪贴板" : "一键复制精彩战报"}</span>
-          </button>
-          <button
-            onClick={onClose}
-            className="w-full py-2 bg-neutral-800 text-neutral-400 hover:text-neutral-200 text-xs rounded-xl"
-          >
-            返回游戏
+            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            <span>{copied ? "文本已复制" : "复制文字战报"}</span>
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

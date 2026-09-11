@@ -30,6 +30,12 @@ export enum ActionType {
   SILENT = "SILENT", // 保持沉默
 }
 
+export interface User {
+  openid: string;
+  nickname: string;
+  avatarUrl: string;
+}
+
 export interface RoomPlayer {
   playerId: string;
   roomId: string;

@@ -59,7 +59,7 @@ async function startServer() {
       const user = {
         openid,
         nickname: nickname || `推理特工_${openid.slice(-4)}`,
-        avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${openid}`,
+        avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/personas/svg?seed=${openid}`,
       };
       const token = issueToken(openid);
       res.json({ success: true, user, token });
@@ -73,7 +73,7 @@ async function startServer() {
     try {
       const { user } = req.body;
       const nickname = user?.nickname || `特工_${req.openid!.slice(-4)}`;
-      const avatarUrl = user?.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${req.openid}`;
+      const avatarUrl = user?.avatarUrl || `https://api.dicebear.com/7.x/personas/svg?seed=${req.openid}`;
 
       const room = engine.createRoom({
         openid: req.openid!,
@@ -94,7 +94,7 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "PARAMS_REQUIRED" });
       }
       const nickname = user?.nickname || `特工_${req.openid!.slice(-4)}`;
-      const avatarUrl = user?.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${req.openid}`;
+      const avatarUrl = user?.avatarUrl || `https://api.dicebear.com/7.x/personas/svg?seed=${req.openid}`;
 
       const result = engine.joinRoom(roomCode, {
         openid: req.openid!,
