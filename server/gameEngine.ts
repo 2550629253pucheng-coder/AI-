@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import {
   Game,
   GamePhase,
@@ -9,16 +10,35 @@ import {
   PlayerAction,
   Vote,
   GameEvent,
-  ErrorCode
+  ErrorCode,
 } from "../src/types/game.js";
 import { COMPANY_THEME } from "./templates.js";
 import { AIGateway } from "./aiGateway.js";
+import { playerIdOf } from "./auth.js";
+
+/**
+ * 服务端内部对局状态，携带隐藏身份。绝不下发客户端。
+ */
+export interface ServerGame extends Game {
+  spyPlayerIds: string[];
+}
 
 // 内存数据库 (满足 MVP 高性能与实时性要求)
-const rooms = new Map<string, Room>();
-const games = new Map<string, Game>();
+export const rooms = new Map<string, Room>();
+export const games = new Map<string, ServerGame>();
 // 私密秘密表：gameId -> Map<playerId, PlayerSecret> (强权限隔离，绝不流入公共状态)
-const playerSecrets = new Map<string, Map<string, PlayerSecret>>();
+export const playerSecrets = new Map<string, Map<string, PlayerSecret>>();
+
+/**
+ * 对外序列化：剥离隐藏字段。
+ * 唯一允许带 revealedSpies 的时机是结算之后。
+ */
+export function toPublicGame(game?: ServerGame): Game | undefined {
+  if (!game) return undefined;
+  const { spyPlayerIds, revealedSpies, ...pub } = game;
+  const settled = game.phase === GamePhase.RESULT || game.phase === GamePhase.FINISHED;
+  return settled ? { ...pub, revealedSpies } : { ...pub };
+}
 
 function generateRoomCode(): string {
   let code = "";
@@ -28,9 +48,22 @@ function generateRoomCode(): string {
   return code;
 }
 
+/**
+ * Fisher-Yates 均匀洗牌算法 (防偏斜)
+ */
+export function shuffle<T>(arr: readonly T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 export class GameEngine {
   private static instance: GameEngine;
   private aiGateway: AIGateway;
+  private advancing = new Set<string>();
 
   private constructor() {
     this.aiGateway = AIGateway.getInstance();
@@ -48,13 +81,14 @@ export class GameEngine {
   public createRoom(user: { openid: string; nickname: string; avatarUrl: string }): Room {
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     let roomCode = generateRoomCode();
-    // 确保code唯一
+    // 确保 code 唯一
     while (Array.from(rooms.values()).some((r) => r.roomCode === roomCode)) {
       roomCode = generateRoomCode();
     }
 
+    const ownerId = playerIdOf(user.openid);
     const owner: RoomPlayer = {
-      playerId: `p_${user.openid}`,
+      playerId: ownerId,
       roomId,
       openid: user.openid,
       nickname: user.nickname,
@@ -82,7 +116,10 @@ export class GameEngine {
     return room;
   }
 
-  public joinRoom(roomCode: string, user: { openid: string; nickname: string; avatarUrl: string }): { room: Room; player: RoomPlayer } {
+  public joinRoom(
+    roomCode: string,
+    user: { openid: string; nickname: string; avatarUrl: string }
+  ): { room: Room; player: RoomPlayer } {
     const room = Array.from(rooms.values()).find((r) => r.roomCode === roomCode.trim());
     if (!room) {
       throw new Error(ErrorCode.ROOM_NOT_FOUND);
@@ -91,7 +128,7 @@ export class GameEngine {
       throw new Error(ErrorCode.ROOM_EXPIRED);
     }
 
-    const playerId = `p_${user.openid}`;
+    const playerId = playerIdOf(user.openid);
     const existing = room.players.find((p) => p.playerId === playerId || p.openid === user.openid);
 
     if (existing) {
@@ -213,11 +250,8 @@ export class GameEngine {
     if (!room) {
       throw new Error(ErrorCode.ROOM_NOT_FOUND);
     }
-    let game: Game | undefined = undefined;
-    if (room.currentGameId) {
-      game = games.get(room.currentGameId);
-    }
-    return { room, game };
+    const game = room.currentGameId ? games.get(room.currentGameId) : undefined;
+    return { room, game: toPublicGame(game) };
   }
 
   public getRoomByCode(roomCode: string): { room: Room; game?: Game } {
@@ -225,11 +259,8 @@ export class GameEngine {
     if (!room) {
       throw new Error(ErrorCode.ROOM_NOT_FOUND);
     }
-    let game: Game | undefined = undefined;
-    if (room.currentGameId) {
-      game = games.get(room.currentGameId);
-    }
-    return { room, game };
+    const game = room.currentGameId ? games.get(room.currentGameId) : undefined;
+    return { room, game: toPublicGame(game) };
   }
 
   // --- 游戏引擎核心流程 ---
@@ -252,20 +283,19 @@ export class GameEngine {
     const gameId = `game_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const template = COMPANY_THEME;
 
-    // 随机分配角色与内鬼身份
+    // 随机分配角色与内鬼身份 (Fisher-Yates 算法)
     const playerCount = room.players.length;
     const spyCount = playerCount >= 8 ? 2 : 1;
 
     // 随机洗牌玩家顺序来定内鬼
-    const shuffledPlayerIndexes = room.players
-      .map((_, i) => i)
-      .sort(() => Math.random() - 0.5);
+    const playerIndices = room.players.map((_, i) => i);
+    const shuffledPlayerIndexes = shuffle(playerIndices);
 
     const spyIndexes = new Set(shuffledPlayerIndexes.slice(0, spyCount));
     const spyPlayerIds: string[] = [];
 
     // 洗牌可用公开职业
-    const shuffledRoles = [...template.roles].sort(() => Math.random() - 0.5);
+    const shuffledRoles = shuffle(template.roles);
 
     const secretsForGame = new Map<string, PlayerSecret>();
 
@@ -289,9 +319,8 @@ export class GameEngine {
           knownInformation: [...spySecretDef.knownInformation, ...roleDef.knownClues],
         });
       } else {
-        const normalSecretDef = template.normalSecretsPool[
-          Math.floor(Math.random() * template.normalSecretsPool.length)
-        ];
+        const normalSecretDef =
+          template.normalSecretsPool[Math.floor(Math.random() * template.normalSecretsPool.length)];
         secretsForGame.set(player.playerId, {
           playerId: player.playerId,
           team: Team.NORMAL,
@@ -306,9 +335,8 @@ export class GameEngine {
     playerSecrets.set(gameId, secretsForGame);
 
     // 第一轮事件
-    const openingTemplate = template.openingEvents[
-      Math.floor(Math.random() * template.openingEvents.length)
-    ];
+    const openingTemplate =
+      template.openingEvents[Math.floor(Math.random() * template.openingEvents.length)];
 
     const openingEvent: GameEvent = {
       eventId: `event_open_${Date.now()}`,
@@ -323,7 +351,7 @@ export class GameEngine {
       createdAt: Date.now(),
     };
 
-    const game: Game = {
+    const serverGame: ServerGame = {
       gameId,
       roomId,
       phase: GamePhase.ROLE_ASSIGNMENT,
@@ -339,11 +367,11 @@ export class GameEngine {
       version: 1,
     };
 
-    games.set(gameId, game);
+    games.set(gameId, serverGame);
     room.status = "PLAYING";
     room.currentGameId = gameId;
 
-    return { room, game };
+    return { room, game: toPublicGame(serverGame)! };
   }
 
   /**
@@ -415,121 +443,166 @@ export class GameEngine {
     player.hasActed = true;
     game.version += 1;
 
-    // 检查是否全员已行动，如果全员行动可供推进
-    return { game, room };
+    return { game: toPublicGame(game)!, room };
   }
 
   /**
    * 推进游戏阶段 (LOBBY -> ROLE_ASSIGNMENT -> ROUND_1 -> ROUND_2 -> ROUND_3 -> VOTING -> SETTLEMENT -> RESULT)
+   * 修复 P1: 内存锁 + 版本乐观锁 + 房主权限校验
    */
-  public async advancePhase(gameId: string): Promise<{ game: Game; room: Room }> {
-    const game = games.get(gameId);
-    if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
-    const room = rooms.get(game.roomId);
-    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+  public async advancePhase(
+    gameId: string,
+    requesterId: string,
+    expectedVersion?: number
+  ): Promise<{ game?: Game; room: Room }> {
+    if (this.advancing.has(gameId)) {
+      throw new Error(ErrorCode.INVALID_GAME_STATE);
+    }
+    this.advancing.add(gameId);
 
-    const template = COMPANY_THEME;
+    try {
+      const game = games.get(gameId);
+      if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
+      const room = rooms.get(game.roomId);
+      if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
 
-    // 重置玩家行动状态
-    room.players.forEach((p) => {
-      p.hasActed = false;
-    });
-
-    switch (game.phase) {
-      case GamePhase.ROLE_ASSIGNMENT: {
-        game.phase = GamePhase.ROUND_1;
-        game.round = 1;
-        game.phaseEndsAt = Date.now() + 90 * 1000;
-        break;
+      if (room.ownerId !== requesterId) {
+        throw new Error(ErrorCode.NOT_ROOM_OWNER);
+      }
+      if (expectedVersion !== undefined && game.version !== expectedVersion) {
+        throw new Error(ErrorCode.INVALID_GAME_STATE);
       }
 
-      case GamePhase.ROUND_1: {
-        // 进入第2轮：追加预制线索
-        game.phase = GamePhase.ROUND_2;
-        game.round = 2;
-        game.phaseEndsAt = Date.now() + 90 * 1000;
+      const template = COMPANY_THEME;
 
-        const r2Template = template.round2Events[
-          Math.floor(Math.random() * template.round2Events.length)
-        ];
-        const r2Event: GameEvent = {
-          eventId: `event_r2_${Date.now()}`,
-          gameId,
-          round: 2,
-          type: "CLUE",
-          title: r2Template.title,
-          description: r2Template.description,
-          publicClue: r2Template.publicClue,
-          discussionPrompt: r2Template.discussionPrompt,
-          source: "TEMPLATE",
+      // 重置玩家行动状态
+      room.players.forEach((p) => {
+        p.hasActed = false;
+      });
+
+      switch (game.phase) {
+        case GamePhase.ROLE_ASSIGNMENT: {
+          game.phase = GamePhase.ROUND_1;
+          game.round = 1;
+          game.phaseEndsAt = Date.now() + 90 * 1000;
+          break;
+        }
+
+        case GamePhase.ROUND_1: {
+          // 进入第2轮：追加预制线索
+          game.phase = GamePhase.ROUND_2;
+          game.round = 2;
+          game.phaseEndsAt = Date.now() + 90 * 1000;
+
+          const r2Template =
+            template.round2Events[Math.floor(Math.random() * template.round2Events.length)];
+          const r2Event: GameEvent = {
+            eventId: `event_r2_${Date.now()}`,
+            gameId,
+            round: 2,
+            type: "CLUE",
+            title: r2Template.title,
+            description: r2Template.description,
+            publicClue: r2Template.publicClue,
+            discussionPrompt: r2Template.discussionPrompt,
+            source: "TEMPLATE",
+            createdAt: Date.now(),
+          };
+          game.events.push(r2Event);
+          break;
+        }
+
+        case GamePhase.ROUND_2: {
+          // 进入第3轮：AI导演剧情反转 (AI Twist!)
+          game.phase = GamePhase.ROUND_3;
+          game.round = 3;
+          game.phaseEndsAt = Date.now() + 100 * 1000;
+
+          // 收集前两轮信息生成 Twist Context
+          const publicRoles = room.players.map((p) => ({
+            playerAlias: p.nickname,
+            roleName: p.publicRoleName || "职员",
+          }));
+
+          const importantActions = game.actions.map((a) => ({
+            actor: a.playerName,
+            action: a.type,
+            target: a.targetPlayerName,
+            content: a.content,
+          }));
+
+          const revealedClues = game.events
+            .filter((e) => e.publicClue)
+            .map((e) => e.publicClue as string);
+
+          const twistEvent = await this.aiGateway.generateTwist(gameId, {
+            theme: template.themeName,
+            round: 3,
+            publicRoles,
+            importantActions,
+            revealedClues,
+          });
+
+          game.events.push(twistEvent);
+          break;
+        }
+
+        case GamePhase.ROUND_3: {
+          // 进入最终投票阶段
+          game.phase = GamePhase.VOTING;
+          game.phaseEndsAt = Date.now() + 60 * 1000;
+          room.players.forEach((p) => {
+            p.hasVoted = false;
+            p.voteCount = 0;
+          });
+
+          // 自动驱动已有机器人投票
+          this.triggerBotVotes(game, room);
+          break;
+        }
+
+        case GamePhase.VOTING: {
+          // 结束投票，进入结算
+          await this.settleGame(gameId);
+          break;
+        }
+
+        default:
+          break;
+      }
+
+      game.version += 1;
+      return { game: toPublicGame(game), room };
+    } finally {
+      this.advancing.delete(gameId);
+    }
+  }
+
+  /**
+   * 辅助方法：在进入投票阶段或机器人行动时自动投出机器人票
+   */
+  private triggerBotVotes(game: ServerGame, room: Room) {
+    const bots = room.players.filter((p) => p.isBot && !p.hasVoted);
+    bots.forEach((bot) => {
+      const candidates = room.players.filter((p) => p.playerId !== bot.playerId);
+      if (candidates.length > 0) {
+        const target = candidates[Math.floor(Math.random() * candidates.length)];
+        const vote: Vote = {
+          gameId: game.gameId,
+          voterPlayerId: bot.playerId,
+          targetPlayerId: target.playerId,
           createdAt: Date.now(),
         };
-        game.events.push(r2Event);
-        break;
+        game.votes.push(vote);
+        bot.hasVoted = true;
+        target.voteCount = (target.voteCount || 0) + 1;
       }
-
-      case GamePhase.ROUND_2: {
-        // 进入第3轮：AI导演剧情反转 (AI Twist!)
-        game.phase = GamePhase.ROUND_3;
-        game.round = 3;
-        game.phaseEndsAt = Date.now() + 100 * 1000;
-
-        // 收集前两轮信息生成 Twist Context
-        const publicRoles = room.players.map((p) => ({
-          playerAlias: p.nickname,
-          roleName: p.publicRoleName || "职员",
-        }));
-
-        const importantActions = game.actions.map((a) => ({
-          actor: a.playerName,
-          action: a.type,
-          target: a.targetPlayerName,
-          content: a.content,
-        }));
-
-        const revealedClues = game.events
-          .filter((e) => e.publicClue)
-          .map((e) => e.publicClue as string);
-
-        const twistEvent = await this.aiGateway.generateTwist(gameId, {
-          theme: template.themeName,
-          round: 3,
-          publicRoles,
-          importantActions,
-          revealedClues,
-        });
-
-        game.events.push(twistEvent);
-        break;
-      }
-
-      case GamePhase.ROUND_3: {
-        // 进入最终投票阶段
-        game.phase = GamePhase.VOTING;
-        game.phaseEndsAt = Date.now() + 60 * 1000;
-        room.players.forEach((p) => {
-          p.hasVoted = false;
-          p.voteCount = 0;
-        });
-        break;
-      }
-
-      case GamePhase.VOTING: {
-        // 结束投票，进入结算
-        await this.settleGame(gameId);
-        break;
-      }
-
-      default:
-        break;
-    }
-
-    game.version += 1;
-    return { game, room };
+    });
   }
 
   /**
    * 提交投票 (P0 投票唯一性与反重复)
+   * 修复 P2: 仅在线非Bot玩家计入待投票人数
    */
   public async submitVote(
     gameId: string,
@@ -569,17 +642,18 @@ export class GameEngine {
     target.voteCount = (target.voteCount || 0) + 1;
     game.version += 1;
 
-    // 如果所有在线/非bot玩家都已经投票完成，自动结算！
-    const pendingVoters = room.players.filter((p) => p.online && !p.hasVoted);
+    // 如果所有在线非bot玩家都已经投票完成，自动结算！
+    const pendingVoters = room.players.filter((p) => p.online && !p.isBot && !p.hasVoted);
     if (pendingVoters.length === 0) {
       await this.settleGame(gameId);
     }
 
-    return { game, room };
+    return { game: toPublicGame(game)!, room };
   }
 
   /**
    * 胜负结算与AI赛后报告生成
+   * 修复 P2 05: 全员0票时判定内鬼胜利，严谨计票
    */
   public async settleGame(gameId: string): Promise<{ game: Game; room: Room }> {
     const game = games.get(gameId);
@@ -604,36 +678,22 @@ export class GameEngine {
     });
 
     // 寻找最高得票数
-    let maxVotes = -1;
-    let highestVotedPlayerIds: string[] = [];
+    const entries = Object.entries(voteCounts);
+    const maxVotes = Math.max(0, ...entries.map(([, c]) => c));
 
-    for (const [pId, count] of Object.entries(voteCounts)) {
-      if (count > maxVotes) {
-        maxVotes = count;
-        highestVotedPlayerIds = [pId];
-      } else if (count === maxVotes && maxVotes > 0) {
-        highestVotedPlayerIds.push(pId);
-      }
-    }
-
-    // 胜负判断：
-    // 如果得票最高者中含有内鬼 (或无人平票且最高票是内鬼) => 普通玩家胜利！
-    // 否则 => 内鬼阵营胜利！
-    const spySet = new Set(game.spyPlayerIds);
-    const caughtSpy = highestVotedPlayerIds.some((pId) => spySet.has(pId));
-
-    if (caughtSpy && highestVotedPlayerIds.length === 1) {
-      game.winnerTeam = Team.NORMAL;
-    } else if (caughtSpy && highestVotedPlayerIds.length > 1) {
-      // 平票规则：按文档平票内鬼增加胜算，若包含内鬼且平票内鬼脱身
+    if (maxVotes === 0) {
+      // 全员零票，内鬼从容脱身
       game.winnerTeam = Team.SPY;
     } else {
-      game.winnerTeam = Team.SPY;
+      const top = entries.filter(([, c]) => c === maxVotes).map(([id]) => id);
+      const spySet = new Set(game.spyPlayerIds);
+      // MVP 规范：最高票唯一且是内鬼 -> 好人胜；其余(含平票) -> 内鬼胜
+      game.winnerTeam = top.length === 1 && spySet.has(top[0]) ? Team.NORMAL : Team.SPY;
     }
 
     game.endedAt = Date.now();
 
-    // 揭开内鬼真正身份
+    // 揭开内鬼真正身份 (写入 revealedSpies)
     const gameSecrets = playerSecrets.get(gameId);
     game.revealedSpies = game.spyPlayerIds.map((sId) => {
       const p = room.players.find((item) => item.playerId === sId);
@@ -659,7 +719,10 @@ export class GameEngine {
     });
 
     const actionsSummary = game.actions.map(
-      (a) => `${a.playerName} 进行了「${a.type}」，目标是：${a.targetPlayerName || "全场"}。${a.content ? `内容：${a.content}` : ""}`
+      (a) =>
+        `${a.playerName} 进行了「${a.type}」，目标是：${a.targetPlayerName || "全场"}。${
+          a.content ? `内容：${a.content}` : ""
+        }`
     );
 
     const votesSummary = game.votes.map((v) => {
@@ -684,16 +747,23 @@ export class GameEngine {
     game.phase = GamePhase.RESULT;
     game.version += 1;
 
-    return { game, room };
+    return { game: toPublicGame(game)!, room };
   }
 
   /**
    * P0 核心功能：「再来一局 (One More Game)」
-   * 保留当前房间成员，清空上一局准备/投票/行动，重新随机身份与事件！
+   * 修复 P2 08: 校验 requesterId 为房主，清理上一局内存防 OOM
    */
   public restartGame(roomId: string, requesterId: string): { room: Room; game: Game } {
     const room = rooms.get(roomId);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+    if (room.ownerId !== requesterId) throw new Error(ErrorCode.NOT_ROOM_OWNER);
+
+    // 清掉上一局，防内存泄漏
+    if (room.currentGameId) {
+      games.delete(room.currentGameId);
+      playerSecrets.delete(room.currentGameId);
+    }
 
     // 重置所有人状态并开始新的一局
     room.players.forEach((p) => {
@@ -704,7 +774,7 @@ export class GameEngine {
     });
 
     // 启动全新一局
-    return this.startGame(roomId, room.ownerId);
+    return this.startGame(roomId, requesterId);
   }
 
   /**
@@ -718,7 +788,11 @@ export class GameEngine {
 
     const bots = room.players.filter((p) => p.isBot);
 
-    if (game.phase === GamePhase.ROUND_1 || game.phase === GamePhase.ROUND_2 || game.phase === GamePhase.ROUND_3) {
+    if (
+      game.phase === GamePhase.ROUND_1 ||
+      game.phase === GamePhase.ROUND_2 ||
+      game.phase === GamePhase.ROUND_3
+    ) {
       const actionPool = [
         { type: ActionType.ACCUSE, content: "昨晚他的时间线有很大疑点！" },
         { type: ActionType.DEFEND, content: "我和他昨晚都在前台，他不可能去会议室。" },
@@ -753,6 +827,20 @@ export class GameEngine {
       });
     }
 
-    return { game, room };
+    return { game: toPublicGame(game)!, room };
   }
 }
+
+// 定期清理过期房间与对局 (防 OOM, 修复 P2 07)
+const SWEEP_MS = 10 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, room] of rooms) {
+    if (room.expiresAt > now) continue;
+    if (room.currentGameId) {
+      games.delete(room.currentGameId);
+      playerSecrets.delete(room.currentGameId);
+    }
+    rooms.delete(roomId);
+  }
+}, SWEEP_MS).unref();

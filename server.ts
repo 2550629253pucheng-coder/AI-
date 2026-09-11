@@ -1,10 +1,22 @@
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GameEngine } from "./server/gameEngine.js";
+import { issueToken, verifyToken, playerIdOf } from "./server/auth.js";
+import { ErrorCode } from "./src/types/game.js";
 
 dotenv.config();
+
+declare global {
+  namespace Express {
+    interface Request {
+      openid?: string;
+      playerId?: string;
+    }
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -14,50 +26,81 @@ async function startServer() {
 
   const engine = GameEngine.getInstance();
 
+  /**
+   * 鉴权中间件 (P0 02 统一验证 Token)
+   */
+  function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+    const h = req.headers.authorization || "";
+    const token = h.startsWith("Bearer ") ? h.slice(7).trim() : "";
+    const claims = verifyToken(token);
+    if (!claims) {
+      return res.status(401).json({ success: false, error: ErrorCode.UNAUTHORIZED });
+    }
+    req.openid = claims.openid;
+    req.playerId = playerIdOf(claims.openid);
+    next();
+  }
+
   // API 路由
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: Date.now() });
   });
 
-  // 用户登录 (模拟微信登录云函数返回合法安全用户)
+  // 用户登录 (签发 HMAC Token)
   app.post("/api/login", (req, res) => {
     try {
       const { nickname, avatarUrl, customOpenid } = req.body || {};
-      // 保证开发测试环境下能稳定模拟多设备
-      const openid = customOpenid || `wx_user_${Math.random().toString(36).substring(2, 9)}`;
+      const isDev = process.env.NODE_ENV !== "production";
+      const openid =
+        isDev && customOpenid
+          ? String(customOpenid)
+          : `wx_user_${crypto.randomBytes(4).toString("hex")}`;
+
       const user = {
         openid,
-        nickname: nickname || `推理特工_${openid.substring(8, 12)}`,
+        nickname: nickname || `推理特工_${openid.slice(-4)}`,
         avatarUrl: avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${openid}`,
       };
-      res.json({ success: true, user });
+      const token = issueToken(openid);
+      res.json({ success: true, user, token });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
 
-  // 创建房间
-  app.post("/api/room/create", (req, res) => {
+  // 创建房间 (通过 Token 取得真实 openid/playerId)
+  app.post("/api/room/create", requireAuth, (req, res) => {
     try {
       const { user } = req.body;
-      if (!user || !user.openid) {
-        return res.status(400).json({ success: false, error: "USER_REQUIRED" });
-      }
-      const room = engine.createRoom(user);
+      const nickname = user?.nickname || `特工_${req.openid!.slice(-4)}`;
+      const avatarUrl = user?.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${req.openid}`;
+
+      const room = engine.createRoom({
+        openid: req.openid!,
+        nickname,
+        avatarUrl,
+      });
       res.json({ success: true, room });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // 加入房间
-  app.post("/api/room/join", (req, res) => {
+  // 加入房间 (通过 Token 取得真实 openid/playerId)
+  app.post("/api/room/join", requireAuth, (req, res) => {
     try {
       const { roomCode, user } = req.body;
-      if (!roomCode || !user) {
+      if (!roomCode) {
         return res.status(400).json({ success: false, error: "PARAMS_REQUIRED" });
       }
-      const result = engine.joinRoom(roomCode, user);
+      const nickname = user?.nickname || `特工_${req.openid!.slice(-4)}`;
+      const avatarUrl = user?.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${req.openid}`;
+
+      const result = engine.joinRoom(roomCode, {
+        openid: req.openid!,
+        nickname,
+        avatarUrl,
+      });
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -65,10 +108,10 @@ async function startServer() {
   });
 
   // 退出房间
-  app.post("/api/room/leave", (req, res) => {
+  app.post("/api/room/leave", requireAuth, (req, res) => {
     try {
-      const { roomId, playerId } = req.body;
-      const room = engine.leaveRoom(roomId, playerId);
+      const { roomId } = req.body;
+      const room = engine.leaveRoom(roomId, req.playerId!);
       res.json({ success: true, room });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -76,10 +119,10 @@ async function startServer() {
   });
 
   // 准备/取消准备
-  app.post("/api/room/ready", (req, res) => {
+  app.post("/api/room/ready", requireAuth, (req, res) => {
     try {
-      const { roomId, playerId, isReady } = req.body;
-      const room = engine.setReady(roomId, playerId, Boolean(isReady));
+      const { roomId, isReady } = req.body;
+      const room = engine.setReady(roomId, req.playerId!, Boolean(isReady));
       res.json({ success: true, room });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -120,25 +163,21 @@ async function startServer() {
   });
 
   // 开始游戏 (房主权限)
-  app.post("/api/room/start", (req, res) => {
+  app.post("/api/room/start", requireAuth, (req, res) => {
     try {
-      const { roomId, ownerId } = req.body;
-      const result = engine.startGame(roomId, ownerId);
+      const { roomId } = req.body;
+      const result = engine.startGame(roomId, req.playerId!);
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // 获取玩家私密秘密 (权限隔离)
-  app.get("/api/game/:gameId/secret", (req, res) => {
+  // 获取玩家私密秘密 (只能读取本人对应密钥)
+  app.get("/api/game/:gameId/secret", requireAuth, (req, res) => {
     try {
       const { gameId } = req.params;
-      const playerId = req.query.playerId as string;
-      if (!playerId) {
-        return res.status(401).json({ success: false, error: "PLAYER_ID_REQUIRED" });
-      }
-      const secret = engine.getMySecret(gameId, playerId);
+      const secret = engine.getMySecret(gameId, req.playerId!);
       res.json({ success: true, secret });
     } catch (err: any) {
       res.status(403).json({ success: false, error: err.message });
@@ -146,21 +185,21 @@ async function startServer() {
   });
 
   // 提交玩家行动
-  app.post("/api/game/action", (req, res) => {
+  app.post("/api/game/action", requireAuth, (req, res) => {
     try {
-      const { gameId, playerId, type, targetPlayerId, content } = req.body;
-      const result = engine.submitAction(gameId, playerId, type, targetPlayerId, content);
+      const { gameId, type, targetPlayerId, content } = req.body;
+      const result = engine.submitAction(gameId, req.playerId!, type, targetPlayerId, content);
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // 推进回合
-  app.post("/api/game/advance", async (req, res) => {
+  // 推进回合 (需房主权限 + 乐观锁版本校验)
+  app.post("/api/game/advance", requireAuth, async (req, res) => {
     try {
-      const { gameId } = req.body;
-      const result = await engine.advancePhase(gameId);
+      const { gameId, expectedVersion } = req.body;
+      const result = await engine.advancePhase(gameId, req.playerId!, expectedVersion);
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -168,21 +207,21 @@ async function startServer() {
   });
 
   // 提交投票
-  app.post("/api/game/vote", async (req, res) => {
+  app.post("/api/game/vote", requireAuth, async (req, res) => {
     try {
-      const { gameId, voterPlayerId, targetPlayerId } = req.body;
-      const result = await engine.submitVote(gameId, voterPlayerId, targetPlayerId);
+      const { gameId, targetPlayerId } = req.body;
+      const result = await engine.submitVote(gameId, req.playerId!, targetPlayerId);
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // P0 再来一局 (One More Game)
-  app.post("/api/game/restart", (req, res) => {
+  // P0 再来一局 (One More Game - 房主权限)
+  app.post("/api/game/restart", requireAuth, (req, res) => {
     try {
-      const { roomId, requesterId } = req.body;
-      const result = engine.restartGame(roomId, requesterId);
+      const { roomId } = req.body;
+      const result = engine.restartGame(roomId, req.playerId!);
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });

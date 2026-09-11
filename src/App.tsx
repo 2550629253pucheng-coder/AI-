@@ -10,6 +10,7 @@ import { ShareCardModal } from "./components/ShareCardModal.js";
 import { api, UserSession } from "./services/api.js";
 import { Room, Game, GamePhase, RoomPlayer, PlayerSecret, ActionType } from "./types/game.js";
 import { audio } from "./utils/audio.js";
+import { track } from "./utils/analytics.js";
 
 export default function App() {
   const [user, setUser] = useState<UserSession | null>(null);
@@ -36,11 +37,15 @@ export default function App() {
     const init = async () => {
       try {
         const storedUser = localStorage.getItem("ai_party_user");
+        const storedToken = localStorage.getItem("ai_impostor_token");
         let activeUser: UserSession;
-        if (storedUser) {
+
+        if (storedUser && storedToken) {
           activeUser = JSON.parse(storedUser);
+          api.setToken(storedToken);
         } else {
-          activeUser = await api.login();
+          const loginRes = await api.login();
+          activeUser = loginRes.user;
           localStorage.setItem("ai_party_user", JSON.stringify(activeUser));
         }
         setUser(activeUser);
@@ -55,6 +60,7 @@ export default function App() {
             setCurrentPlayer(res.player);
             audio.playJoin();
             showToast(`已加入房间 ${res.room.roomCode}`);
+            track("room_join", { roomId: res.room.roomId, roomCode: res.room.roomCode, viaUrl: true });
           } catch (e: any) {
             console.warn("Auto-join url room failed:", e.message);
           }
@@ -103,8 +109,9 @@ export default function App() {
         return;
       }
       try {
-        const s = await api.getMySecret(game.gameId, currentPlayer.playerId);
+        const s = await api.getMySecret(game.gameId);
         setSecret(s);
+        track("identity_view", { gameId: game.gameId, team: s.team, role: s.roleName });
       } catch (err) {
         // ignore
       }
@@ -128,6 +135,7 @@ export default function App() {
       setCurrentPlayer(newRoom.players[0]);
       audio.playJoin();
       showToast(`房间创建成功，房号：${newRoom.roomCode}`);
+      track("room_create", { roomId: newRoom.roomId, roomCode: newRoom.roomCode });
     } catch (err: any) {
       showToast(`创建失败: ${err.message}`);
     } finally {
@@ -144,6 +152,7 @@ export default function App() {
       setCurrentPlayer(res.player);
       audio.playJoin();
       showToast(`成功加入房间 ${res.room.roomCode}`);
+      track("room_join", { roomId: res.room.roomId, roomCode: res.room.roomCode });
     } catch (err: any) {
       showToast(`加入失败: ${err.message}`);
     } finally {
@@ -154,7 +163,7 @@ export default function App() {
   const handleLeaveRoom = async () => {
     if (!room || !currentPlayer) return;
     try {
-      await api.leaveRoom(room.roomId, currentPlayer.playerId);
+      await api.leaveRoom(room.roomId);
     } catch (e) {
       // ignore
     }
@@ -170,7 +179,7 @@ export default function App() {
     setLoading(true);
     try {
       const nextReady = !currentPlayer.isReady;
-      const updatedRoom = await api.setReady(room.roomId, currentPlayer.playerId, nextReady);
+      const updatedRoom = await api.setReady(room.roomId, nextReady);
       setRoom(updatedRoom);
       const updatedMe = updatedRoom.players.find((p) => p.playerId === currentPlayer.playerId);
       if (updatedMe) setCurrentPlayer(updatedMe);
@@ -200,11 +209,12 @@ export default function App() {
     if (!room || !currentPlayer) return;
     setLoading(true);
     try {
-      const res = await api.startGame(room.roomId, currentPlayer.playerId);
+      const res = await api.startGame(room.roomId);
       setRoom(res.room);
       setGame(res.game);
       audio.playReveal();
       showToast("游戏开始！正在下发绝密身份");
+      track("game_start", { gameId: res.game.gameId, playerCount: res.room.players.length });
     } catch (err: any) {
       showToast(err.message === "PLAYER_NOT_READY" ? "还有玩家未准备" : `开局失败: ${err.message}`);
     } finally {
@@ -216,12 +226,15 @@ export default function App() {
     if (!game) return;
     setLoading(true);
     try {
-      const res = await api.advancePhase(game.gameId);
+      const res = await api.advancePhase(game.gameId, game.version);
       setGame(res.game);
       setRoom(res.room);
       audio.playReveal();
+      track("phase_advance", { gameId: game.gameId, targetPhase: res.game.phase });
     } catch (err: any) {
-      showToast(`推进失败: ${err.message}`);
+      // 乐观锁冲突时自动重新拉取最新状态
+      syncRoomState();
+      showToast(`推进阶段: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -231,10 +244,11 @@ export default function App() {
     if (!game || !currentPlayer) return;
     setLoading(true);
     try {
-      const res = await api.submitAction(game.gameId, currentPlayer.playerId, type, targetPlayerId, content);
+      const res = await api.submitAction(game.gameId, type, targetPlayerId, content);
       setGame(res.game);
       setRoom(res.room);
       showToast("行动已公开发表！");
+      track("action_submit", { gameId: game.gameId, type, round: game.round });
     } catch (err: any) {
       showToast(`提交失败: ${err.message}`);
     } finally {
@@ -246,10 +260,11 @@ export default function App() {
     if (!game || !currentPlayer) return;
     setLoading(true);
     try {
-      const res = await api.submitVote(game.gameId, currentPlayer.playerId, targetPlayerId);
+      const res = await api.submitVote(game.gameId, targetPlayerId);
       setGame(res.game);
       setRoom(res.room);
       showToast("指认投票已锁定！");
+      track("vote_submit", { gameId: game.gameId, targetPlayerId });
     } catch (err: any) {
       showToast(`投票失败: ${err.message}`);
     } finally {
@@ -262,11 +277,12 @@ export default function App() {
     if (!room || !currentPlayer) return;
     setLoading(true);
     try {
-      const res = await api.restartGame(room.roomId, currentPlayer.playerId);
+      const res = await api.restartGame(room.roomId);
       setRoom(res.room);
       setGame(res.game);
       audio.playReveal();
       showToast("新一局开启！原班人马已重新分配绝密身份");
+      track("restart_click", { roomId: room.roomId });
     } catch (err: any) {
       showToast(`再来一局失败: ${err.message}`);
     } finally {
@@ -288,10 +304,18 @@ export default function App() {
   };
 
   // 切换席位视角 (用于在单一浏览器内直接测试多玩家视角)
-  const handleSwitchPlayer = (player: RoomPlayer) => {
-    setCurrentPlayer(player);
-    audio.playClick();
-    showToast(`已切换至【${player.nickname}】视角`);
+  const handleSwitchPlayer = async (player: RoomPlayer) => {
+    try {
+      // 切换当前用户的身份与鉴权令牌
+      const loginRes = await api.login(player.nickname, player.openid);
+      setUser(loginRes.user);
+      setCurrentPlayer(player);
+      audio.playClick();
+      showToast(`已切换至【${player.nickname}】视角`);
+      track("seat_switch", { playerId: player.playerId, isBot: player.isBot });
+    } catch (e: any) {
+      showToast(`切换视角失败: ${e.message}`);
+    }
   };
 
   // 页面流转路由判定

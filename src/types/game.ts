@@ -117,7 +117,6 @@ export interface Game {
   startedAt: number;
   endedAt?: number;
   winnerTeam?: Team;
-  spyPlayerIds: string[]; // 服务端保留，结算时才公开
   revealedSpies?: { playerId: string; name: string; roleName: string }[];
   phaseEndsAt: number; // 倒计时服务端截止时间戳
   events: GameEvent[];
