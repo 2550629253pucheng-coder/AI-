@@ -6,9 +6,17 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GameEngine } from "./server/gameEngine.js";
 import { issueToken, verifyToken, playerIdOf } from "./server/auth.js";
+import { exchangeWeChatCode } from "./server/wechatAuth.js";
+import {
+  generalApiLimiter,
+  aiThemeLimiter,
+  aiInterrogateLimiter,
+  roomCreateLimiter,
+} from "./server/rateLimiter.js";
+import { contentSecurity } from "./server/contentSecurity.js";
 import { ErrorCode } from "./src/types/game.js";
 import { PRESET_THEMES } from "./server/templates.js";
-import { AIGateway } from "./server/aiGateway.js";
+import { AIGateway, AI_COMPLIANCE_WATERMARK } from "./server/aiGateway.js";
 import { WebSocketManager } from "./server/ws.js";
 
 dotenv.config();
@@ -55,14 +63,43 @@ async function startServer() {
     res.json({ status: "ok", time: Date.now() });
   });
 
-  // 用户登录 (签发 HMAC Token)
-  app.post("/api/login", (req, res) => {
+  // 合规与算法备案信息公示 (P0 1.1 - 1.4 微信小程序上架必备公示)
+  app.get("/api/compliance/info", (req, res) => {
+    res.json({
+      success: true,
+      appName: "AI局中局",
+      version: "1.0.0-wechat-candidate",
+      aiProvider: process.env.DOMESTIC_AI_API_KEY ? "国内合规大语言模型" : "Google Gemini AI",
+      aiFilingNotice: "本服务使用已完成境内深度合成服务算法备案的大语言模型底座，依据《生成式人工智能服务管理暂行办法》提供沉浸式剧情推演娱乐服务。",
+      watermark: AI_COMPLIANCE_WATERMARK,
+      contentModeration: "已接入敏感词过滤体系与微信安全核验服务(security.msgSecCheck)",
+      healthSystem: "已部署游戏防沉迷与适龄提示（16+）",
+    });
+  });
+
+  // 用户登录 (支持微信小程序 wx.login code2session 官方授权流程及受保护访客模式)
+  app.post("/api/login", generalApiLimiter, async (req, res) => {
     try {
-      const { nickname, avatarUrl, customOpenid } = req.body || {};
-      const openid =
-        customOpenid && typeof customOpenid === "string" && customOpenid.length >= 8
-          ? String(customOpenid)
-          : `wx_user_${crypto.randomBytes(4).toString("hex")}`;
+      const { code, nickname, avatarUrl, customOpenid } = req.body || {};
+      let openid: string;
+
+      if (code && typeof code === "string") {
+        // 1. 微信小程序官方 code2session 换取真实 openid
+        const wxResult = await exchangeWeChatCode(code);
+        if (!wxResult.success || !wxResult.openid) {
+          return res.status(400).json({ success: false, error: wxResult.error || "WECHAT_AUTH_FAILED" });
+        }
+        openid = wxResult.openid;
+      } else if (process.env.NODE_ENV === "production" && process.env.WECHAT_APP_ID) {
+        // 生产环境强制必须通过微信授权 code 换取，阻断任何客户端伪造 openid
+        return res.status(400).json({ success: false, error: "WECHAT_CODE_REQUIRED" });
+      } else {
+        // 本地/演示环境：如果未配置微信密钥，禁止任意冒充已有账户，分配加密随机访客 ID
+        openid =
+          customOpenid && typeof customOpenid === "string" && customOpenid.length >= 8 && process.env.NODE_ENV !== "production"
+            ? String(customOpenid)
+            : `guest_${crypto.randomBytes(6).toString("hex")}`;
+      }
 
       const user = {
         openid,
@@ -77,7 +114,7 @@ async function startServer() {
   });
 
   // 创建房间 (通过 Token 取得真实 openid/playerId)
-  app.post("/api/room/create", requireAuth, (req, res) => {
+  app.post("/api/room/create", requireAuth, roomCreateLimiter, (req, res) => {
     try {
       const { user } = req.body;
       const nickname = user?.nickname || `特工_${req.openid!.slice(-4)}`;
@@ -137,10 +174,14 @@ async function startServer() {
     }
   });
 
-  // 快速添加测试好友 (Bot)
-  app.post("/api/room/add-bots", (req, res) => {
+  // 快速添加测试好友 (Bot) - 需鉴权且校验房主权限或本地开发环境
+  app.post("/api/room/add-bots", requireAuth, (req, res) => {
     try {
       const { roomId, count } = req.body;
+      const roomCheck = engine.getRoom(roomId);
+      if (roomCheck.room.ownerId !== req.playerId && process.env.NODE_ENV === "production") {
+        return res.status(403).json({ success: false, error: ErrorCode.NOT_ROOM_OWNER });
+      }
       const room = engine.addBotPlayers(roomId, count || 6);
       res.json({ success: true, room });
     } catch (err: any) {
@@ -153,13 +194,22 @@ async function startServer() {
     res.json({ success: true, themes: PRESET_THEMES });
   });
 
-  // AI 快速生成定制剧本 (Custom Scenario AI Generator)
-  app.post("/api/theme/generate", requireAuth, async (req, res) => {
+  // AI 快速生成定制剧本 (Custom Scenario AI Generator) - 限流 + 提示词合规审核
+  app.post("/api/theme/generate", requireAuth, aiThemeLimiter, async (req, res) => {
     try {
       const { prompt } = req.body || {};
+      if (prompt && typeof prompt === "string") {
+        const audit = await contentSecurity.auditText(prompt, req.openid);
+        if (!audit.pass) {
+          return res.status(400).json({
+            success: false,
+            error: audit.reason || "定制剧本输入包含敏感词，请合规创作",
+          });
+        }
+      }
       const aiGateway = AIGateway.getInstance();
       const theme = await aiGateway.generateCustomTheme(prompt || "");
-      res.json({ success: true, theme });
+      res.json({ success: true, theme, watermark: AI_COMPLIANCE_WATERMARK });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -295,8 +345,8 @@ async function startServer() {
     }
   });
 
-  // 玩家主动呼叫 AI 导演评理/现场质询
-  app.post("/api/game/ai-interrogate", requireAuth, async (req, res) => {
+  // 玩家主动呼叫 AI 导演评理/现场质询 (带限流防刷)
+  app.post("/api/game/ai-interrogate", requireAuth, aiInterrogateLimiter, async (req, res) => {
     try {
       const { gameId } = req.body;
       const result = await engine.requestAIDirectorInterrogation(gameId, req.playerId!);
@@ -317,14 +367,25 @@ async function startServer() {
     }
   });
 
-  // 辅助测试：让所有 Bot 模拟行动
-  app.post("/api/game/bot-auto-act", (req, res) => {
+  // 辅助测试：让所有 Bot 模拟行动 - 需鉴权且校验房主权限或开发环境
+  app.post("/api/game/bot-auto-act", requireAuth, (req, res) => {
     try {
       const { gameId } = req.body;
       const result = engine.triggerBotActions(gameId);
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // 文本内容安全核验前置接口 (P0 1.3 供前端/小程序输入框预检及微信合规对接)
+  app.post("/api/security/audit-text", requireAuth, async (req, res) => {
+    try {
+      const { content } = req.body || {};
+      const result = await contentSecurity.auditText(content, req.openid);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 

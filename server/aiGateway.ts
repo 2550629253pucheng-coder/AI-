@@ -1,6 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { Team, PlayerReport, PlayerTag, GameEvent } from "../src/types/game.js";
 import { COMPANY_THEME, FALLBACK_REPORTS, ThemeTemplate, PRESET_THEMES } from "./templates.js";
+import { contentSecurity } from "./contentSecurity.js";
+
+// 合规显著标识：依据《生成式人工智能服务管理暂行办法》，所有 AI 生成内容均需标注生成标识
+export const AI_COMPLIANCE_WATERMARK = "【AI深度合成生成标识】本剧情与点评由大模型算法驱动生成，仅供沉浸式社交推理娱乐，请勿用于非游戏场景。";
 
 export interface TwistContext {
   theme: string;
@@ -70,12 +74,68 @@ interface SafeGenerateOptions {
 }
 
 /**
+ * 国内备案合规大模型调用适配（支持 DeepSeek / 阿里通义千问 / 腾讯混元 / 字节豆包等 OpenAI 兼容接口）
+ */
+async function callDomesticAI(options: SafeGenerateOptions): Promise<string | null> {
+  const apiKey = process.env.DOMESTIC_AI_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  const baseUrl = (process.env.DOMESTIC_AI_BASE_URL || "https://api.deepseek.com/v1").replace(/\/+$/, "");
+  const model = process.env.DOMESTIC_AI_MODEL || "deepseek-chat";
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 7000);
+
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: options.prompt }],
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timer);
+    if (!res.ok) {
+      console.warn(`[AIGateway] Domestic AI returned ${res.status}`);
+      return null;
+    }
+
+    const data: any = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    return typeof content === "string" ? content.trim() : null;
+  } catch (err: any) {
+    console.warn(`[AIGateway] Domestic AI call error (${options.label}):`, err.message || err);
+    return null;
+  }
+}
+
+/**
  * 健壮的 AI 生成封装：
- * 1. 优先使用 gemini-3.8-flash，如遇 503（临时高峰）或 429 自动降级尝试 gemini-3.1-flash-lite
- * 2. 避免将上游偶发的 503 临时不可用直接 console.error 造成控制台和监控误报
- * 3. 失败时静默且优雅地转入完备的确定性规则备用引擎
+ * 1. 优先尝试国内合规备案模型（若配置了 DOMESTIC_AI_API_KEY）
+ * 2. 依次降级尝试 gemini-3.8-flash 和 gemini-3.1-flash-lite
+ * 3. 生成内容必须经 contentSecurity 敏感词核验，违规自动驳回至高保真模板
+ * 4. 失败时静默且优雅地转入完备的确定性规则备用引擎
  */
 async function safeGenerateText(options: SafeGenerateOptions): Promise<string | null> {
+  // 1. 若配置了国内备案模型，优先使用国内合规引擎
+  if (process.env.DOMESTIC_AI_API_KEY) {
+    const domesticResult = await callDomesticAI(options);
+    if (domesticResult) {
+      const sec = await contentSecurity.auditText(domesticResult);
+      if (sec.pass) {
+        return domesticResult;
+      }
+      console.warn(`[AIGateway] 国内模型生成文本未通过合规审核，转入备用机制`);
+    }
+  }
+
   const client = getAiClient();
   if (!client) {
     return null;
@@ -98,7 +158,14 @@ async function safeGenerateText(options: SafeGenerateOptions): Promise<string | 
       );
 
       if (response && response.text) {
-        return response.text.trim();
+        const text = response.text.trim();
+        // 关键合规：所有大模型输出均过敏感词核验
+        const audit = await contentSecurity.auditText(text);
+        if (!audit.pass) {
+          console.warn(`[AIGateway] AI 模型输出触发内容安全策略，使用安全模板`);
+          return null;
+        }
+        return text;
       }
     } catch (err: any) {
       const status = err?.status || err?.code || err?.error?.code;

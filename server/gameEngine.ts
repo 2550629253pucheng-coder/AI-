@@ -28,6 +28,7 @@ import { AIGateway } from "./aiGateway.js";
 import { playerIdOf } from "./auth.js";
 import { SQLiteStore } from "./db.js";
 import { WebSocketManager } from "./ws.js";
+import { contentSecurity } from "./contentSecurity.js";
 
 /**
  * 服务端内部对局状态，携带隐藏身份。绝不下发客户端。
@@ -79,6 +80,8 @@ export class GameEngine {
   private ws: WebSocketManager;
   private advancing = new Set<string>();
   private autoTimerStarted = false;
+  // O(1) 房间码到房间 ID 索引 (优化 P0 2.5 避免大并发时每次遍历 O(n) 查询)
+  private roomCodeToId = new Map<string, string>();
 
   private constructor() {
     this.aiGateway = AIGateway.getInstance();
@@ -107,6 +110,7 @@ export class GameEngine {
         // 只保留近 24 小时内的活动房间
         if (Date.now() - r.createdAt < 24 * 3600 * 1000) {
           rooms.set(r.roomId, r);
+          this.roomCodeToId.set(r.roomCode, r.roomId);
           if (r.currentGameId) {
             const g = this.store.getGame(r.currentGameId) as ServerGame | null;
             if (g) {
@@ -219,6 +223,7 @@ export class GameEngine {
     };
 
     rooms.set(roomId, room);
+    this.roomCodeToId.set(roomCode, roomId);
     this.store.saveRoom(room);
     return room;
   }
@@ -227,9 +232,14 @@ export class GameEngine {
     roomCode: string,
     user: { openid: string; nickname: string; avatarUrl: string }
   ): { room: Room; game?: Game } {
-    const room = Array.from(rooms.values()).find((r) => r.roomCode === roomCode);
+    // 优先 O(1) 索引查找
+    const roomId = this.roomCodeToId.get(roomCode);
+    const room = roomId ? rooms.get(roomId) : Array.from(rooms.values()).find((r) => r.roomCode === roomCode);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
     if (room.status !== "WAITING") throw new Error(ErrorCode.INVALID_GAME_STATE);
+    if (!this.roomCodeToId.has(roomCode)) {
+      this.roomCodeToId.set(roomCode, room.roomId);
+    }
 
     const playerId = playerIdOf(user.openid);
     let player = room.players.find((p) => p.playerId === playerId);
@@ -282,6 +292,7 @@ export class GameEngine {
 
     if (room.players.length === 0) {
       rooms.delete(roomId);
+      this.roomCodeToId.delete(room.roomCode);
     } else {
       this.store.saveRoom(room);
       this.broadcast(roomId);
@@ -373,8 +384,12 @@ export class GameEngine {
   }
 
   public getRoomByCode(code: string): { room: Room; game?: Game } {
-    const room = Array.from(rooms.values()).find((r) => r.roomCode === code);
+    const roomId = this.roomCodeToId.get(code);
+    const room = roomId ? rooms.get(roomId) : Array.from(rooms.values()).find((r) => r.roomCode === code);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+    if (!this.roomCodeToId.has(code)) {
+      this.roomCodeToId.set(code, room.roomId);
+    }
     const game = room.currentGameId ? games.get(room.currentGameId) : undefined;
     return { room, game: toPublicGame(game) };
   }
@@ -560,6 +575,19 @@ export class GameEngine {
       targetPlayerName = target ? `${target.nickname} (${target.publicRoleName || "嫌疑人"})` : undefined;
     }
 
+    // 音频安全与大小合规限制（防止恶意超大 Base64 造成网络与内存雪崩）
+    if (audioData) {
+      if (typeof audioData !== "string" || audioData.length > 1.5 * 1024 * 1024) {
+        throw new Error("AUDIO_TOO_LARGE");
+      }
+      if (audioDuration && audioDuration > 65) {
+        throw new Error("AUDIO_DURATION_EXCEEDED");
+      }
+    }
+
+    // 内容安全合规过滤
+    const cleanContent = contentSecurity.sanitizeSync(content.slice(0, 500));
+
     const action: PlayerAction = {
       actionId: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       gameId,
@@ -569,7 +597,7 @@ export class GameEngine {
       type: type || ActionType.CHAT,
       targetPlayerId,
       targetPlayerName,
-      content: content.slice(0, 500), // 放宽至 500 字
+      content: cleanContent,
       audioData,
       audioDuration,
       createdAt: Date.now(),
@@ -717,9 +745,20 @@ export class GameEngine {
     const player = room.players.find((p) => p.playerId === playerId);
     if (!player) throw new Error(ErrorCode.UNAUTHORIZED);
 
+    if (audioData) {
+      if (typeof audioData !== "string" || audioData.length > 1.5 * 1024 * 1024) {
+        throw new Error("AUDIO_TOO_LARGE");
+      }
+      if (audioDuration && audioDuration > 65) {
+        throw new Error("AUDIO_DURATION_EXCEEDED");
+      }
+    }
+
     if (!room.voiceMessages) {
       room.voiceMessages = [];
     }
+
+    const cleanContent = contentSecurity.sanitizeSync(content.trim());
 
     const message: RoomVoiceMessage = {
       messageId: `vmsg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -727,7 +766,7 @@ export class GameEngine {
       playerId,
       playerName: player.nickname,
       avatarUrl: player.avatarUrl,
-      content: content.trim() || (audioDuration ? `[语音 ${Math.round(audioDuration)}" ]` : "发表了一条语音"),
+      content: cleanContent || (audioDuration ? `[语音 ${Math.round(audioDuration)}" ]` : "发表了一条语音"),
       audioData,
       audioDuration,
       createdAt: Date.now(),

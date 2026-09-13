@@ -108,11 +108,15 @@ export const api = {
     localStorage.removeItem("ai_impostor_token");
   },
 
-  async login(nickname?: string, customOpenid?: string): Promise<{ user: UserSession; token: string }> {
+  async login(
+    nickname?: string,
+    customOpenid?: string,
+    code?: string
+  ): Promise<{ user: UserSession; token: string }> {
     const res = await fetch(`${BASE_URL}/api/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nickname, customOpenid }),
+      body: JSON.stringify({ nickname, customOpenid, code }),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error || "Login failed");
@@ -265,14 +269,28 @@ export const api = {
   },
 
   async triggerBotActions(gameId: string): Promise<{ game: Game; room: Room }> {
-    const res = await fetch(`${BASE_URL}/api/game/bot-auto-act`, {
+    const { data } = await requestWithAuth(`${BASE_URL}/api/game/bot-auto-act`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gameId }),
     });
-    const data = await res.json().catch(() => ({}));
     if (!data.success) throw new Error(data.error || "Failed to trigger bot actions");
     return { game: data.game, room: data.room };
+  },
+
+  async auditText(content: string): Promise<{ pass: boolean; reason?: string; filteredText: string }> {
+    const { data } = await requestWithAuth(`${BASE_URL}/api/security/audit-text`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    });
+    if (!data.success) throw new Error(data.error || "Audit request failed");
+    return data;
+  },
+
+  async getComplianceInfo(): Promise<any> {
+    const res = await fetch(`${BASE_URL}/api/compliance/info`);
+    const data = await res.json().catch(() => ({}));
+    if (!data.success) throw new Error(data.error || "Failed to get compliance info");
+    return data;
   },
 
   async getPresetThemes(): Promise<any[]> {

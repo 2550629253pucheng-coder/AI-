@@ -8,7 +8,8 @@ import {
   Clock,
   Edit2,
   Check,
-  Compass
+  Compass,
+  ShieldCheck
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { User } from "../types/game.js";
@@ -56,6 +57,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [nicknameInput, setNicknameInput] = useState(user.nickname);
   const [showRules, setShowRules] = useState(false);
+  const [showCompliance, setShowCompliance] = useState(false);
   const [selectedThemeIndex, setSelectedThemeIndex] = useState(0);
 
   const handleJoin = (e: React.FormEvent) => {
@@ -255,7 +257,92 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             进入
           </button>
         </form>
+
+        {/* 微信小程序合规公示栏 (适龄提示 16+ · 深度合成备案 · 内容安全) */}
+        <div className="pt-2 pb-1 text-center">
+          <button
+            type="button"
+            onClick={() => setShowCompliance(true)}
+            className="inline-flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-600 dark:text-neutral-500 dark:hover:text-neutral-300 transition"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+            <span>适龄提示 16+ · AI算法备案与合规公示</span>
+          </button>
+        </div>
       </div>
+
+      {/* 小程序合规与算法备案弹窗 */}
+      <AnimatePresence>
+        {showCompliance && (
+          <div
+            className="fixed inset-0 z-50 bg-black/60 dark:bg-black/85 backdrop-blur-xs flex items-center justify-center p-4"
+            onClick={() => setShowCompliance(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="合规与算法备案说明"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.94 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-cyber-card border border-slate-200 dark:border-cyber-border-bright rounded-3xl p-5 max-w-sm w-full space-y-3.5 shadow-xl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-cyber-border-subtle pb-2.5">
+                <span className="text-slate-800 dark:text-neutral-100 font-bold text-sm flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                  小程序上架与合规公示
+                </span>
+                <button
+                  onClick={() => setShowCompliance(false)}
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-full hover:bg-slate-100 dark:hover:bg-cyber-card-hover"
+                  aria-label="关闭公示"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="text-xs text-slate-600 dark:text-neutral-300 space-y-3 max-h-80 overflow-y-auto pr-1 leading-relaxed">
+                <div className="bg-slate-50 dark:bg-cyber-card/50 p-2.5 rounded-xl border border-slate-200/60 dark:border-cyber-border">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400 mb-1">
+                    <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">CADPA 16+</span>
+                    <span>适龄提示与防沉迷说明</span>
+                  </div>
+                  <p className="text-[11px]">本产品适合年满 16 周岁及以上用户使用。游戏涉及多人语言与逻辑推理互动，未成年人请在监护人指导下体验，并接入微信健康防沉迷系统。</p>
+                </div>
+
+                <div>
+                  <strong className="text-sky-700 dark:text-sky-400 block mb-0.5">一、深度合成与算法备案公示</strong>
+                  <p className="text-[11px]">
+                    本小程序剧情推进与复盘由境内已完成算法备案的深度合成大语言模型提供技术支持。依照《生成式人工智能服务管理暂行办法》，所有 AI 生成剧情均已嵌入专属防伪防混淆标识。
+                  </p>
+                </div>
+
+                <div>
+                  <strong className="text-indigo-700 dark:text-indigo-400 block mb-0.5">二、内容安全与言论合规</strong>
+                  <p className="text-[11px]">
+                    已全面接入敏感词合规过滤及微信内容安全接口 (security.msgSecCheck)。严禁利用本工具传播违法违规、辱骂攻击或不当言论，违规行为将触发即时拦截并保留审计日志。
+                  </p>
+                </div>
+
+                <div>
+                  <strong className="text-teal-700 dark:text-teal-400 block mb-0.5">三、个人信息与隐私保护</strong>
+                  <p className="text-[11px]">
+                    本产品仅在用户授权后获取必要的基础公开资料（头像、昵称用于游戏名牌渲染）。语音互动仅限当剧本推演传输，未经授权绝不用于商业推广或第三方画像。
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowCompliance(false)}
+                className="w-full py-2.5 btn-primary-neon text-white font-bold text-xs rounded-xl transition"
+              >
+                已悉知并确认
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* 规则说明模态框 */}
       <AnimatePresence>
