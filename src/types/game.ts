@@ -116,6 +116,9 @@ export interface PlayerAction {
   content: string;
   audioData?: string; // base64 DataURL 语音录音
   audioDuration?: number; // 录音时长(秒)
+  mediaUrl?: string; // 腾讯云 COS 或远程音频安全核验地址
+  isRevoked?: boolean; // 是否因微信安全审核不合规而被撤回
+  revocationReason?: string;
   createdAt: number;
 }
 
@@ -128,6 +131,9 @@ export interface RoomVoiceMessage {
   content: string; // 语音识别文字或输入文字
   audioData?: string; // 真实录音 base64 DataURL
   audioDuration?: number; // 录音时长(秒)
+  mediaUrl?: string; // 腾讯云 COS 或远程音频安全核验地址
+  isRevoked?: boolean; // 是否因微信安全审核不合规而被撤回
+  revocationReason?: string;
   createdAt: number;
 }
 
@@ -192,6 +198,49 @@ export interface Game {
   version: number;
 }
 
+export interface RoleDef {
+  roleName: string;
+  duty: string;
+  defaultSecret: string;
+  defaultMission: string;
+  knownClues: string[];
+}
+
+export interface ThemeTemplate {
+  themeId: string;
+  themeName: string;
+  background: string;
+  roles: RoleDef[];
+  spySecrets: {
+    secret: string;
+    mission: string;
+    knownInformation: string[];
+  }[];
+  normalSecretsPool: {
+    secret: string;
+    mission: string;
+    knownInformation: string[];
+  }[];
+  openingEvents: {
+    title: string;
+    description: string;
+    publicClue: string;
+    discussionPrompt: string;
+  }[];
+  round2Events: {
+    title: string;
+    description: string;
+    publicClue: string;
+    discussionPrompt: string;
+  }[];
+  twistFallbacks: {
+    title: string;
+    description: string;
+    publicClue: string;
+    discussionPrompt: string;
+  }[];
+}
+
 export interface Room {
   roomId: string;
   roomCode: string;
@@ -203,7 +252,7 @@ export interface Room {
   themeId?: string;
   themeName?: string;
   themeBackground?: string;
-  customTheme?: any;
+  customTheme?: ThemeTemplate;
   createdAt: number;
   expiresAt: number;
   players: RoomPlayer[];

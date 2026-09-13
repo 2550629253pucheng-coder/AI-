@@ -186,7 +186,7 @@ export class GameEngine {
   public createRoom(user: { openid: string; nickname: string; avatarUrl: string }): Room {
     const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     let roomCode = generateRoomCode();
-    while (Array.from(rooms.values()).some((r) => r.roomCode === roomCode)) {
+    while (this.roomCodeToId.has(roomCode)) {
       roomCode = generateRoomCode();
     }
 
@@ -383,6 +383,14 @@ export class GameEngine {
     return { room, game: toPublicGame(game) };
   }
 
+  public getGameWithRoom(gameId: string): { game: ServerGame; room: Room } {
+    const game = games.get(gameId);
+    if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
+    const room = rooms.get(game.roomId);
+    if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
+    return { game, room };
+  }
+
   public getRoomByCode(code: string): { room: Room; game?: Game } {
     const roomId = this.roomCodeToId.get(code);
     const room = roomId ? rooms.get(roomId) : Array.from(rooms.values()).find((r) => r.roomCode === code);
@@ -544,8 +552,9 @@ export class GameEngine {
     targetPlayerId?: string,
     content: string = "",
     audioData?: string,
-    audioDuration?: number
-  ): { game: Game; room: Room } {
+    audioDuration?: number,
+    mediaUrl?: string
+  ): { game: Game; room: Room; action: PlayerAction } {
     const game = games.get(gameId);
     if (!game) throw new Error(ErrorCode.GAME_NOT_FOUND);
     const room = rooms.get(game.roomId);
@@ -600,6 +609,7 @@ export class GameEngine {
       content: cleanContent,
       audioData,
       audioDuration,
+      mediaUrl,
       createdAt: Date.now(),
     };
 
@@ -632,7 +642,7 @@ export class GameEngine {
     // AI 导演实时介入概率检测：当某轮发言累计达 3 条且尚未有最新点评时，异步触发 AI 导演插话
     this.triggerAIDirectorCommentIfAppropriate(game, room);
 
-    return { game: toPublicGame(game)!, room };
+    return { game: toPublicGame(game)!, room, action };
   }
 
   /**
@@ -737,7 +747,8 @@ export class GameEngine {
     playerId: string,
     content: string = "",
     audioData?: string,
-    audioDuration?: number
+    audioDuration?: number,
+    mediaUrl?: string
   ): { room: Room; message: RoomVoiceMessage } {
     const room = rooms.get(roomId);
     if (!room) throw new Error(ErrorCode.ROOM_NOT_FOUND);
@@ -769,6 +780,7 @@ export class GameEngine {
       content: cleanContent || (audioDuration ? `[语音 ${Math.round(audioDuration)}" ]` : "发表了一条语音"),
       audioData,
       audioDuration,
+      mediaUrl,
       createdAt: Date.now(),
     };
 
@@ -780,6 +792,52 @@ export class GameEngine {
     this.store.saveRoom(room);
     this.broadcast(roomId);
     return { room, message };
+  }
+
+  /**
+   * 异步安全核验触发违规语音撤回并全房广播
+   */
+  public revokeMediaMessage(options: {
+    roomId?: string;
+    gameId?: string;
+    messageId?: string;
+    actionId?: string;
+    reason?: string;
+  }): boolean {
+    let changed = false;
+    if (options.roomId && options.messageId) {
+      const room = rooms.get(options.roomId);
+      if (room && room.voiceMessages) {
+        const msg = room.voiceMessages.find((m) => m.messageId === options.messageId);
+        if (msg) {
+          msg.isRevoked = true;
+          msg.audioData = undefined;
+          msg.mediaUrl = undefined;
+          msg.content = "[该语音未通过安全合规核验，已撤回]";
+          msg.revocationReason = options.reason || "语音包含违规内容";
+          this.store.saveRoom(room);
+          this.broadcast(options.roomId);
+          changed = true;
+        }
+      }
+    }
+    if (options.gameId && options.actionId) {
+      const game = games.get(options.gameId);
+      if (game && game.actions) {
+        const act = game.actions.find((a) => a.actionId === options.actionId);
+        if (act) {
+          act.isRevoked = true;
+          act.audioData = undefined;
+          act.mediaUrl = undefined;
+          act.content = "[该语音发言未通过安全合规核验，已撤回]";
+          act.revocationReason = options.reason || "语音包含违规内容";
+          this.store.saveGame(game);
+          this.broadcast(game.roomId);
+          changed = true;
+        }
+      }
+    }
+    return changed;
   }
 
   /**

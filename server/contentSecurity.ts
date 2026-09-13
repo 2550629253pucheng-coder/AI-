@@ -171,4 +171,63 @@ export class ContentSecurity {
   }
 }
 
+// 异步媒体审核 trace_id 关联表，保留近 1 小时记录
+export interface MediaAuditRecord {
+  roomId?: string;
+  gameId?: string;
+  messageId?: string;
+  actionId?: string;
+  mediaUrl: string;
+  openid: string;
+  createdAt: number;
+}
+
+const mediaTraceMap = new Map<string, MediaAuditRecord>();
+
+// 提交异步音频审核（结果由微信推送至 /api/security/media-callback）
+export async function auditAudioAsync(
+  openid: string,
+  mediaUrl: string,
+  meta?: { roomId?: string; gameId?: string; messageId?: string; actionId?: string }
+): Promise<string | null> {
+  const token = await getWeChatAccessToken();
+  if (!token) return null;
+
+  try {
+    const res = await fetch(`https://api.weixin.qq.com/wxa/media_check_async?access_token=${encodeURIComponent(token)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        media_url: mediaUrl, // 必须为公网可访问的 URL（COS / OSS 等存储地址）
+        media_type: 2,       // 2 = 音频
+        version: 2,
+        openid,
+        scene: 2,            // 社交发言场景
+      }),
+    });
+
+    const data: any = await res.json();
+    if (data.errcode === 0 && data.trace_id) {
+      const traceId = String(data.trace_id);
+      mediaTraceMap.set(traceId, {
+        roomId: meta?.roomId,
+        gameId: meta?.gameId,
+        messageId: meta?.messageId,
+        actionId: meta?.actionId,
+        mediaUrl,
+        openid,
+        createdAt: Date.now(),
+      });
+      return traceId;
+    }
+  } catch (err) {
+    console.warn("[ContentSecurity] Failed to submit mediaCheckAsync:", err);
+  }
+  return null;
+}
+
+export function getMediaAuditRecord(traceId: string): MediaAuditRecord | undefined {
+  return mediaTraceMap.get(traceId);
+}
+
 export const contentSecurity = ContentSecurity.getInstance();

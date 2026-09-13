@@ -13,7 +13,7 @@ import {
   aiInterrogateLimiter,
   roomCreateLimiter,
 } from "./server/rateLimiter.js";
-import { contentSecurity } from "./server/contentSecurity.js";
+import { contentSecurity, auditAudioAsync, getMediaAuditRecord } from "./server/contentSecurity.js";
 import { ErrorCode } from "./src/types/game.js";
 import { PRESET_THEMES } from "./server/templates.js";
 import { AIGateway, AI_COMPLIANCE_WATERMARK } from "./server/aiGateway.js";
@@ -273,10 +273,10 @@ async function startServer() {
     }
   });
 
-  // 提交玩家行动 (支持语音录音与语音识别内容)
+  // 提交玩家行动 (支持语音录音与语音识别内容及 COS 语音地址)
   app.post("/api/game/action", requireAuth, (req, res) => {
     try {
-      const { gameId, type, targetPlayerId, content, audioData, audioDuration } = req.body;
+      const { gameId, type, targetPlayerId, content, audioData, audioDuration, mediaUrl } = req.body;
       const result = engine.submitAction(
         gameId,
         req.playerId!,
@@ -284,18 +284,28 @@ async function startServer() {
         targetPlayerId,
         content,
         audioData,
-        audioDuration
+        audioDuration,
+        mediaUrl
       );
+
+      // 若上传了公网多媒体语音地址，异步接入微信 mediaCheckAsync
+      if (mediaUrl && typeof mediaUrl === "string" && result.action?.actionId) {
+        auditAudioAsync(req.openid || "unknown", mediaUrl, {
+          gameId,
+          actionId: result.action.actionId,
+        }).catch((err) => console.warn("[WeChatMediaCheck] Audit submit error:", err));
+      }
+
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // 发送房间语音交流 / 对讲消息 (不想打字时直接按住说话或发语音玩)
+  // 发送房间语音交流 / 对讲消息 (不想打字时直接按住说话或发语音玩，支持 COS 语音地址)
   app.post("/api/room/voice", requireAuth, (req, res) => {
     try {
-      const { roomId, content, audioData, audioDuration } = req.body;
+      const { roomId, content, audioData, audioDuration, mediaUrl } = req.body;
       if (!roomId) {
         return res.status(400).json({ success: false, error: "ROOM_ID_REQUIRED" });
       }
@@ -304,8 +314,18 @@ async function startServer() {
         req.playerId!,
         content,
         audioData,
-        audioDuration
+        audioDuration,
+        mediaUrl
       );
+
+      // 若上传了公网多媒体语音地址，异步接入微信 mediaCheckAsync
+      if (mediaUrl && typeof mediaUrl === "string" && result.message?.messageId) {
+        auditAudioAsync(req.openid || "unknown", mediaUrl, {
+          roomId,
+          messageId: result.message.messageId,
+        }).catch((err) => console.warn("[WeChatMediaCheck] Audit submit error:", err));
+      }
+
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -371,6 +391,13 @@ async function startServer() {
   app.post("/api/game/bot-auto-act", requireAuth, (req, res) => {
     try {
       const { gameId } = req.body;
+      // P0 修复：生产环境强制房主校验，防止任意用户操控他人对局
+      if (process.env.NODE_ENV === "production") {
+        const { room } = engine.getGameWithRoom(gameId);
+        if (room.ownerId !== req.playerId) {
+          return res.status(403).json({ success: false, error: ErrorCode.NOT_ROOM_OWNER });
+        }
+      }
       const result = engine.triggerBotActions(gameId);
       res.json({ success: true, ...result });
     } catch (err: any) {
@@ -386,6 +413,34 @@ async function startServer() {
       res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // 微信异步多媒体/语音安全核验回调接口 (mediaCheckAsync 异步推送入口)
+  app.post("/api/security/media-callback", (req, res) => {
+    try {
+      const { Event, trace_id, result } = req.body || {};
+      if (Event === "wxa_media_check" && trace_id) {
+        console.log(`[MediaCheckCallback] Received audit event for trace_id: ${trace_id}`, result);
+        if (result && result.suggest === "risky") {
+          const record = getMediaAuditRecord(String(trace_id));
+          if (record) {
+            console.warn(`[MediaCheckCallback] Revoking violating audio message:`, record);
+            engine.revokeMediaMessage({
+              roomId: record.roomId,
+              gameId: record.gameId,
+              messageId: record.messageId,
+              actionId: record.actionId,
+              reason: "经微信内容安全核验判定该语音存在违规风险，已被自动撤回",
+            });
+          }
+        }
+      }
+      // 微信平台规范要求返回 200 并在内容中声明 success
+      res.status(200).send("success");
+    } catch (err: any) {
+      console.error("[MediaCheckCallback] Error processing callback:", err);
+      res.status(200).send("success");
     }
   });
 

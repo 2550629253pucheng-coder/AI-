@@ -199,11 +199,12 @@ export const api = {
     targetPlayerId?: string,
     content: string = "",
     audioData?: string,
-    audioDuration?: number
+    audioDuration?: number,
+    mediaUrl?: string
   ): Promise<{ game: Game; room: Room }> {
     const { data } = await requestWithAuth(`${BASE_URL}/api/game/action`, {
       method: "POST",
-      body: JSON.stringify({ gameId, type, targetPlayerId, content, audioData, audioDuration }),
+      body: JSON.stringify({ gameId, type, targetPlayerId, content, audioData, audioDuration, mediaUrl }),
     });
     if (!data.success) throw new Error(data.error || "Failed to submit action");
     return { game: data.game, room: data.room };
@@ -213,11 +214,12 @@ export const api = {
     roomId: string,
     content: string = "",
     audioData?: string,
-    audioDuration?: number
+    audioDuration?: number,
+    mediaUrl?: string
   ): Promise<{ room: Room; message: RoomVoiceMessage }> {
     const { data } = await requestWithAuth(`${BASE_URL}/api/room/voice`, {
       method: "POST",
-      body: JSON.stringify({ roomId, content, audioData, audioDuration }),
+      body: JSON.stringify({ roomId, content, audioData, audioDuration, mediaUrl }),
     });
     if (!data.success) throw new Error(data.error || "Failed to send voice message");
     return { room: data.room, message: data.message };
