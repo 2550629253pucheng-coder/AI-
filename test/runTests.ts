@@ -147,36 +147,40 @@ async function runAllTests() {
     "昨晚看见他出入档案室"
   );
 
-  let duplicateActFailed = false;
-  try {
-    engine.submitAction(
-      started.game.gameId,
-      room.ownerId,
-      ActionType.DEFEND,
-      undefined,
-      "二次行动"
-    );
-  } catch (err: any) {
-    duplicateActFailed = err.message === ErrorCode.ALREADY_ACTED;
-  }
-  assert.strictEqual(duplicateActFailed, true, "Duplicate action in same round must be rejected");
+  // 自由发言测试：支持多次发言与插话，不限制一人一次
+  const secondActRes = engine.submitAction(
+    started.game.gameId,
+    room.ownerId,
+    ActionType.DEFEND,
+    undefined,
+    "补充辩护：昨晚我一直在会议室"
+  );
+  assert.strictEqual(secondActRes.game.actions.length >= 2, true, "Multiple chat actions in same round must be allowed");
 
-  // 7. 推进阶段到 ROUND_2, ROUND_3, VOTING
-  const r2 = await engine.advancePhase(started.game.gameId, room.ownerId, actRes.game.version);
+  // 7. 推进阶段到 ROUND_2, MID_VOTING, EXILE_RESULT, FINAL_ROUND, VOTING
+  const r2 = await engine.advancePhase(started.game.gameId, room.ownerId, secondActRes.game.version);
   assert.strictEqual(r2.game?.phase, GamePhase.ROUND_2);
 
-  const r3 = await engine.advancePhase(started.game.gameId, room.ownerId, r2.game!.version);
-  assert.strictEqual(r3.game?.phase, GamePhase.ROUND_3);
+  const midVoting = await engine.advancePhase(started.game.gameId, room.ownerId, r2.game!.version);
+  assert.strictEqual(midVoting.game?.phase, GamePhase.MID_VOTING);
 
-  const voting = await engine.advancePhase(started.game.gameId, room.ownerId, r3.game!.version);
+  // 中期放逐投票测试
+  const midVoteRes = await engine.submitMidVote(started.game.gameId, room.ownerId, firstBot.playerId);
+  assert.strictEqual(midVoteRes.game.phase, GamePhase.EXILE_RESULT);
+
+  const finalRound = await engine.advancePhase(started.game.gameId, room.ownerId, midVoteRes.game.version);
+  assert.strictEqual(finalRound.game?.phase, GamePhase.FINAL_ROUND);
+
+  const voting = await engine.advancePhase(started.game.gameId, room.ownerId, finalRound.game!.version);
   assert.strictEqual(voting.game?.phase, GamePhase.VOTING);
 
-  // 8. 投票防重与自动结算
-  const voteRes = await engine.submitVote(started.game.gameId, room.ownerId, firstBot.playerId);
+  // 8. 终极投票防重与自动结算（必须投给存活未被淘汰的玩家）
+  const activeBot = room.players.find((p) => p.isBot && !p.isEliminated)!;
+  const voteRes = await engine.submitVote(started.game.gameId, room.ownerId, activeBot.playerId);
   // 重复投票必须报错 (已结算报 INVALID_GAME_STATE，未结算报 ALREADY_VOTED)
   let duplicateVoteFailed = false;
   try {
-    await engine.submitVote(started.game.gameId, room.ownerId, firstBot.playerId);
+    await engine.submitVote(started.game.gameId, room.ownerId, activeBot.playerId);
   } catch (err: any) {
     duplicateVoteFailed =
       err.message === ErrorCode.ALREADY_VOTED || err.message === ErrorCode.INVALID_GAME_STATE;
@@ -185,7 +189,10 @@ async function runAllTests() {
 
   // 所有真人已投，自动触发结算
   assert.strictEqual(voteRes.game.phase, GamePhase.RESULT);
-  assert.strictEqual(voteRes.game.winnerTeam === Team.NORMAL || voteRes.game.winnerTeam === Team.SPY, true);
+  assert.strictEqual(
+    voteRes.game.winnerTeam === Team.NORMAL || voteRes.game.winnerTeam === Team.SPY || voteRes.game.winnerTeam === "TIE",
+    true
+  );
   assert.strictEqual(Array.isArray(voteRes.game.revealedSpies), true);
   assert.strictEqual(voteRes.game.report !== undefined, true);
 

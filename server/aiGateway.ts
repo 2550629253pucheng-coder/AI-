@@ -34,7 +34,14 @@ function getAiClient(): GoogleGenAI | null {
     return null;
   }
   if (!aiClient) {
-    aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    aiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
   }
   return aiClient;
 }
@@ -54,6 +61,80 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: 
     }),
     timeoutPromise,
   ]);
+}
+
+interface SafeGenerateOptions {
+  prompt: string;
+  label: string;
+  timeoutMs?: number;
+}
+
+/**
+ * 健壮的 AI 生成封装：
+ * 1. 优先使用 gemini-3.8-flash，如遇 503（临时高峰）或 429 自动降级尝试 gemini-3.1-flash-lite
+ * 2. 避免将上游偶发的 503 临时不可用直接 console.error 造成控制台和监控误报
+ * 3. 失败时静默且优雅地转入完备的确定性规则备用引擎
+ */
+async function safeGenerateText(options: SafeGenerateOptions): Promise<string | null> {
+  const client = getAiClient();
+  if (!client) {
+    return null;
+  }
+
+  const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
+
+  for (let i = 0; i < candidateModels.length; i++) {
+    const model = candidateModels[i];
+    try {
+      const generatePromise = client.models.generateContent({
+        model,
+        contents: options.prompt,
+      });
+
+      const response = await withTimeout(
+        generatePromise,
+        options.timeoutMs ?? 7000,
+        null as any
+      );
+
+      if (response && response.text) {
+        return response.text.trim();
+      }
+    } catch (err: any) {
+      const status = err?.status || err?.code || err?.error?.code;
+      const msg = typeof err?.message === "string" ? err.message : "";
+      const isTransient =
+        status === 503 ||
+        status === 429 ||
+        status === 500 ||
+        status === "UNAVAILABLE" ||
+        msg.includes("503") ||
+        msg.includes("high demand") ||
+        msg.includes("UNAVAILABLE") ||
+        msg.includes("RESOURCE_EXHAUSTED");
+
+      if (isTransient && i < candidateModels.length - 1) {
+        console.warn(
+          `[AIGateway] ${model} 临时高负载 (${status || "503"})，正在切换至备用模型 ${candidateModels[i + 1]}...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        continue;
+      }
+
+      if (isTransient) {
+        console.warn(
+          `[AIGateway] 上游模型遇临时访问高峰 (${status || "503"})，已无缝切换至本地高保真剧情复盘与裁决。`
+        );
+      } else {
+        console.warn(
+          `[AIGateway] ${options.label} 触发本地剧情备用策略: ${msg ? msg.slice(0, 80) : "fallback"}`
+        );
+      }
+      return null;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -163,14 +244,14 @@ export class AIGateway {
 }
 注意：只返回纯 JSON，不包含 markdown 代码块或其他任何文字。`;
 
-    const task = async (): Promise<GameEvent> => {
-      try {
-        const response = await client.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: prompt,
-        });
+    const text = await safeGenerateText({
+      prompt,
+      label: "AI Twist",
+      timeoutMs: 8000,
+    });
 
-        const text = response.text || "";
+    if (text) {
+      try {
         const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
         const parsed = JSON.parse(cleaned);
 
@@ -195,14 +276,12 @@ export class AIGateway {
             createdAt: Date.now(),
           };
         }
-        return fallbackEvent;
-      } catch (err) {
-        console.error("[AIGateway] AI twist generation failed or timed out:", err);
-        return fallbackEvent;
+      } catch (parseErr) {
+        console.warn("[AIGateway] AI twist parse failed, using safe template.");
       }
-    };
+    }
 
-    return withTimeout(task(), 8000, fallbackEvent);
+    return fallbackEvent;
   }
 
   /**
@@ -257,13 +336,14 @@ ${JSON.stringify(sanitizedActions)}
 }
 只返回纯 JSON。`;
 
-    const task = async () => {
+    const text = await safeGenerateText({
+      prompt,
+      label: "Round Comment",
+      timeoutMs: 5000,
+    });
+
+    if (text) {
       try {
-        const response = await client.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: prompt,
-        });
-        const text = response.text || "";
         const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
         const parsed = JSON.parse(cleaned);
         if (parsed.text) {
@@ -272,14 +352,12 @@ ${JSON.stringify(sanitizedActions)}
             targetedPlayerName: parsed.targetedPlayerName ? sanitize(parsed.targetedPlayerName, 20) : undefined,
           };
         }
-        return fallback;
-      } catch (err) {
-        console.error("[AIGateway] Round comment failed:", err);
-        return fallback;
+      } catch {
+        // fallback
       }
-    };
+    }
 
-    return withTimeout(task(), 5000, fallback);
+    return fallback;
   }
 
   /**
@@ -296,9 +374,6 @@ ${JSON.stringify(sanitizedActions)}
       ? `【AI导演震撼裁决】全体公投决议已定！【${exiledPlayerName}（${exiledRoleName}）】以 ${voteCount} 票被全场放逐！经系统生物核验……真实身份确认是【潜伏内鬼】！好人阵营成功拔除一颗剧毒钉子！但博弈远未结束，决赛轮即将开战！`
       : `【AI导演悲痛裁决】全体公投决议已定！【${exiledPlayerName}（${exiledRoleName}）】以 ${voteCount} 票被冤枉放逐！经系统核验……他的真正身份竟然是【无辜好人】！全场误杀良臣，真正的内鬼正在阴暗角落狂喜！`;
 
-    const client = getAiClient();
-    if (!client) return fallback;
-
     const prompt = `你是一款微信熟人社交推理小游戏《AI局中局》的「AI导演」。
 剧本：${sanitize(theme, 30)}
 刚刚发生了首轮放逐公投！
@@ -310,20 +385,17 @@ ${JSON.stringify(sanitizedActions)}
 如果抓对内鬼，盛赞全场侦探；如果杀错好人，无情嘲讽大家被内鬼当枪使！
 直接输出台词文本，不要包含引号或json。`;
 
-    const task = async () => {
-      try {
-        const response = await client.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: prompt,
-        });
-        const text = (response.text || "").trim();
-        return text.length > 20 ? text : fallback;
-      } catch {
-        return fallback;
-      }
-    };
+    const text = await safeGenerateText({
+      prompt,
+      label: "Exile Speech",
+      timeoutMs: 5000,
+    });
 
-    return withTimeout(task(), 5000, fallback);
+    if (text && text.trim().length > 20) {
+      return text.trim();
+    }
+
+    return fallback;
   }
 
   /**
@@ -336,8 +408,6 @@ ${JSON.stringify(sanitizedActions)}
     actionsHistory: { actor: string; content: string }[]
   ): Promise<string> {
     const fallback = `AI导演冷笑一声：【${callerName}】你突然呼叫我评理，是在试图借我的嘴转移大家视线，还是真掌握了实锤？我劝你们好好对一对刚刚关于时间线的前后矛盾！`;
-    const client = getAiClient();
-    if (!client) return fallback;
 
     const sanitizedActions = actionsHistory.slice(-10).map((a) => `${sanitize(a.actor, 15)}: ${sanitize(a.content, 50)}`).join("\n");
 
@@ -351,20 +421,17 @@ ${sanitizedActions}
 不要说谁是内鬼，可以调侃呼叫者，也可以挑拨现场矛盾，激发新一轮争辩！
 直接输出台词，不要json。`;
 
-    const task = async () => {
-      try {
-        const response = await client.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: prompt,
-        });
-        const text = (response.text || "").trim();
-        return text.length > 15 ? text : fallback;
-      } catch {
-        return fallback;
-      }
-    };
+    const text = await safeGenerateText({
+      prompt,
+      label: "Director Interrogation",
+      timeoutMs: 5000,
+    });
 
-    return withTimeout(task(), 5000, fallback);
+    if (text && text.trim().length > 15) {
+      return text.trim();
+    }
+
+    return fallback;
   }
 
   /**
@@ -372,7 +439,8 @@ ${sanitizedActions}
    * 评选推理王、戏精大奖、爆笑场面与每位玩家称号
    */
   public async generateReport(context: ReportContext): Promise<PlayerReport> {
-    const fallbackBase = FALLBACK_REPORTS[context.winnerTeam];
+    const fallbackBase =
+      (FALLBACK_REPORTS as any)[context.winnerTeam] || FALLBACK_REPORTS[Team.NORMAL];
     const fallbackPlayerTags: PlayerTag[] = context.players.map((p, index) => {
       const titles = [
         "带节奏大师",
@@ -384,27 +452,33 @@ ${sanitizedActions}
         "背锅大侠",
         "真理在少数人手里",
       ];
+      const isSpy = context.spies.some((s) => s.name === p.name);
       return {
         playerId: p.id,
         playerName: p.name,
         title: titles[index % titles.length],
-        comment: p.team === Team.SPY ? "凭借冷静伪装潜伏全程" : "积极发言推动全场破案",
+        comment: isSpy
+          ? `作为潜伏者极力掩盖破绽（全场获投 ${p.votesReceived} 票）`
+          : `积极参与案情辩论与线索比对（全场获投 ${p.votesReceived} 票）`,
       };
     });
 
+    const candidateDetective = context.players.find(
+      (p) => !context.spies.some((s) => s.name === p.name) && p.votesReceived <= 1
+    );
+
     const fallbackReport: PlayerReport = {
       summary: fallbackBase.summary,
-      bestDetective: fallbackBase.bestDetective,
-      bestActor: fallbackBase.bestActor,
+      bestDetective: candidateDetective?.name
+        ? `【${candidateDetective.name}】${fallbackBase.bestDetective}`
+        : fallbackBase.bestDetective,
+      bestActor: context.spies[0]?.name
+        ? `【${context.spies[0].name}】${fallbackBase.bestActor}`
+        : fallbackBase.bestActor,
       funniestMoment: fallbackBase.funniestMoment,
       biggestTwist: fallbackBase.biggestTwist,
       playerTags: fallbackPlayerTags,
     };
-
-    const client = getAiClient();
-    if (!client) {
-      return fallbackReport;
-    }
 
     const sanitizedActions = context.actionsSummary.map((a) => sanitize(a, 120));
     const sanitizedPlayers = context.players.map((p) => ({
@@ -449,24 +523,24 @@ ${sanitizedActions}
 }
 严格只返回合法JSON，不要包含markdown。`;
 
-    const task = async (): Promise<PlayerReport> => {
-      try {
-        const response = await client.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: prompt,
-        });
+    const text = await safeGenerateText({
+      prompt,
+      label: "Post-Game Report",
+      timeoutMs: 8000,
+    });
 
-        const text = response.text || "";
+    if (text) {
+      try {
         const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
         const parsed = JSON.parse(cleaned);
 
         if (parsed.summary && Array.isArray(parsed.playerTags)) {
           return {
             summary: parsed.summary,
-            bestDetective: parsed.bestDetective || fallbackBase.bestDetective,
-            bestActor: parsed.bestActor || fallbackBase.bestActor,
-            funniestMoment: parsed.funniestMoment || fallbackBase.funniestMoment,
-            biggestTwist: parsed.biggestTwist || fallbackBase.biggestTwist,
+            bestDetective: parsed.bestDetective || fallbackReport.bestDetective,
+            bestActor: parsed.bestActor || fallbackReport.bestActor,
+            funniestMoment: parsed.funniestMoment || fallbackReport.funniestMoment,
+            biggestTwist: parsed.biggestTwist || fallbackReport.biggestTwist,
             playerTags: parsed.playerTags.map((pt: any) => ({
               playerId: pt.playerId || "",
               playerName: pt.playerName || "",
@@ -475,14 +549,12 @@ ${sanitizedActions}
             })),
           };
         }
-        return fallbackReport;
-      } catch (err) {
-        console.error("[AIGateway] AI report generation failed:", err);
-        return fallbackReport;
+      } catch {
+        // fallback
       }
-    };
+    }
 
-    return withTimeout(task(), 8000, fallbackReport);
+    return fallbackReport;
   }
 
   /**
@@ -503,11 +575,6 @@ ${sanitizedActions}
       round2Events: randomPreset.round2Events,
       twistFallbacks: randomPreset.twistFallbacks,
     };
-
-    const client = getAiClient();
-    if (!client) {
-      return fallbackTheme;
-    }
 
     const prompt = `你是一款微信熟人社交推理小游戏《AI局中局》的剧本主创。
 玩家提出了一个专属剧本灵感：“${cleanPrompt}”。
@@ -567,14 +634,14 @@ ${sanitizedActions}
 }
 注意：roles 数组至少包含 6 个有趣的角色。只返回纯 JSON，不要 markdown 或其他字符。`;
 
-    const task = async (): Promise<ThemeTemplate> => {
-      try {
-        const response = await client.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: prompt,
-        });
+    const text = await safeGenerateText({
+      prompt,
+      label: "Custom Theme",
+      timeoutMs: 9000,
+    });
 
-        const text = response.text || "";
+    if (text) {
+      try {
         const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
         const parsed = JSON.parse(cleaned);
 
@@ -609,13 +676,11 @@ ${sanitizedActions}
               : fallbackTheme.twistFallbacks,
           };
         }
-        return fallbackTheme;
-      } catch (err) {
-        console.error("[AIGateway] Custom theme generation failed:", err);
-        return fallbackTheme;
+      } catch {
+        // fallback
       }
-    };
+    }
 
-    return withTimeout(task(), 9000, fallbackTheme);
+    return fallbackTheme;
   }
 }

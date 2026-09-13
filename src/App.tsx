@@ -118,11 +118,32 @@ export default function App() {
   useEffect(() => {
     if (!room?.roomId) return;
     syncRoomState();
-    pollingTimerRef.current = setInterval(syncRoomState, 2000);
+    pollingTimerRef.current = setInterval(syncRoomState, 2500);
     return () => {
       if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
     };
   }, [room?.roomId, syncRoomState]);
+
+  // WebSocket 实时双向状态同步 (毫秒级响应)
+  useEffect(() => {
+    if (!room?.roomId || !currentPlayer?.playerId) return;
+    socketClient.connect(room.roomId, currentPlayer.playerId);
+    const unsubscribe = socketClient.subscribe((msg) => {
+      if (msg.type === "ROOM_STATE") {
+        setRoom(msg.room);
+        setGame(msg.game || null);
+        if (currentPlayer) {
+          const updatedMe = msg.room.players.find((p: any) => p.playerId === currentPlayer.playerId);
+          if (updatedMe) {
+            setCurrentPlayer(updatedMe);
+          }
+        }
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [room?.roomId, currentPlayer?.playerId]);
 
   // 3. 进入游戏或切换玩家时，拉取私密身份 (权限安全隔离)
   useEffect(() => {
@@ -323,6 +344,40 @@ export default function App() {
     }
   };
 
+  const handleSubmitMidVote = async (targetPlayerId: string) => {
+    if (!game || !currentPlayer) return;
+    setLoading(true);
+    try {
+      const res = await api.submitMidVote(game.gameId, targetPlayerId);
+      setGame(res.game);
+      setRoom(res.room);
+      showToast("首轮放逐投票已锁定！");
+      track("mid_vote_submit", { gameId: game.gameId, targetPlayerId });
+    } catch (err: any) {
+      showToast(`投票失败: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCallAIDirector = async () => {
+    if (!game) return;
+    setLoading(true);
+    try {
+      showToast("AI 导演正在介入审讯现场...");
+      const res = await api.requestAIDirectorInterrogation(game.gameId);
+      setGame(res.game);
+      setRoom(res.room);
+      audio.playReveal();
+      showToast("AI 导演已发布毒舌追问！");
+      track("ai_director_call", { gameId: game.gameId, round: game.round });
+    } catch (err: any) {
+      showToast(`呼叫失败: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // P0 再来一局 (One More Game)
   const handleRestartGame = async () => {
     if (!room || !currentPlayer) return;
@@ -432,7 +487,7 @@ export default function App() {
 
       case GamePhase.ROUND_1:
       case GamePhase.ROUND_2:
-      case GamePhase.ROUND_3:
+      case GamePhase.FINAL_ROUND:
         return (
           <MainGameScreen
             game={game}
@@ -442,9 +497,35 @@ export default function App() {
             onSubmitAction={handleSubmitAction}
             onAdvancePhase={handleAdvancePhase}
             onTriggerBots={handleTriggerBots}
+            onCallAIDirector={handleCallAIDirector}
             loading={loading}
             onSendVoice={handleSendVoiceMessage}
             voiceMessages={room.voiceMessages}
+          />
+        );
+
+      case GamePhase.MID_VOTING:
+        return (
+          <VotingScreen
+            game={game}
+            currentPlayer={currentPlayer || room.players[0]}
+            roomPlayers={room.players}
+            onSubmitVote={handleSubmitMidVote}
+            onTriggerBots={handleTriggerBots}
+            onForceSettle={handleAdvancePhase}
+            loading={loading}
+            isMidExile={true}
+          />
+        );
+
+      case GamePhase.EXILE_RESULT:
+        return (
+          <ExileScreen
+            game={game}
+            currentPlayer={currentPlayer || room.players[0]}
+            roomPlayers={room.players}
+            onProceed={handleAdvancePhase}
+            canProceed={Boolean(currentPlayer?.isOwner)}
           />
         );
 
@@ -458,6 +539,7 @@ export default function App() {
             onTriggerBots={handleTriggerBots}
             onForceSettle={handleAdvancePhase}
             loading={loading}
+            isMidExile={false}
           />
         );
 

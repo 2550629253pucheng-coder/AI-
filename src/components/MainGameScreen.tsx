@@ -54,6 +54,7 @@ const ACTION_MAP: Record<ActionType, { label: string; desc: string; icon: string
   [ActionType.REVEAL]: { label: "披露线索", desc: "公布你的掌握信息", icon: "🔍" },
   [ActionType.INVESTIGATE]: { label: "密查档案", desc: "重点核查某人行踪", icon: "📑" },
   [ActionType.SILENT]: { label: "随聊表态", desc: "自由发表推理", icon: "💬" },
+  [ActionType.CHAT]: { label: "自由聊天", desc: "自由发表发言", icon: "💭" },
 };
 
 type ActiveTab = "event" | "suspects" | "chat";
@@ -477,9 +478,9 @@ export const MainGameScreen: React.FC<MainGameScreenProps> = ({
                               <Sparkles className="w-2.5 h-2.5 text-amber-300 animate-spin" />
                               <span>AI 导演在场抓包</span>
                             </span>
-                            {c.targetPlayerName && (
+                            {c.targetedPlayerName && (
                               <span className="text-rose-300 font-black">
-                                针对 @{c.targetPlayerName}
+                                针对 @{c.targetedPlayerName}
                               </span>
                             )}
                           </span>

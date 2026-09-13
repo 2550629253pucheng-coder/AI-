@@ -11,6 +11,8 @@ export type FunnelEvent =
   | "action_submit"
   | "phase_advance"
   | "vote_submit"
+  | "mid_vote_submit"
+  | "ai_director_call"
   | "game_settle"
   | "game_complete"
   | "restart_click"

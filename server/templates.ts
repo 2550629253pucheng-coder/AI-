@@ -798,7 +798,7 @@ export function getRandomTrapMission() {
   return TRAP_MISSIONS[Math.floor(Math.random() * TRAP_MISSIONS.length)];
 }
 
-export const FALLBACK_REPORTS: Record<Team, {
+export const FALLBACK_REPORTS: Record<Team | "TIE", {
   summary: string;
   bestDetective: string;
   bestActor: string;
@@ -818,6 +818,13 @@ export const FALLBACK_REPORTS: Record<Team, {
     bestActor: "全程无辜纯良，演技堪比奥斯卡影帝，甚至带头为受害者喊冤！",
     funniestMoment: "无辜的好人被大家当成铁内鬼围攻，辩解到语无伦次。",
     biggestTwist: "直到最终结算页面揭晓，大家才震惊地发现真正的小丑竟是自己！"
+  },
+  "TIE": {
+    summary: "终局审判出现平票僵局！好人阵营与内鬼阵营势均力敌、未分高下，商业机密仍然下落成谜！建议原班人马立刻再来一局决一死战！",
+    bestDetective: "敏锐捕捉关键线索，在最后一刻稳住局面与内鬼分庭抗礼！",
+    bestActor: "巧妙周旋于各方阵营之间，成功伪装逃脱了绝对指认！",
+    funniestMoment: "终局投票揭晓瞬间最高票数居然打平，全场瞬间陷入沉思与欢笑！",
+    biggestTwist: "双方唇枪舌剑博弈至最后一秒，胜负悬念依然未解！"
   }
 };
 

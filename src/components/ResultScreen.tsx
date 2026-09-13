@@ -11,7 +11,8 @@ import {
   Award,
   Flame,
   Home,
-  Target
+  Target,
+  Scale
 } from "lucide-react";
 import { motion } from "motion/react";
 import { Game, RoomPlayer, Team } from "../types/game.js";
@@ -41,7 +42,8 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
   const [showFullReport, setShowFullReport] = useState<boolean>(true);
   const hasSpokenRef = useRef(false);
 
-  const isNormalWin = game.winnerTeam === Team.NORMAL;
+  const isTie = Boolean(game.isTie || (game.winnerTeam as any) === "TIE");
+  const isNormalWin = !isTie && game.winnerTeam === Team.NORMAL;
   const revealedSpies = game.revealedSpies || [];
   const report = game.report;
 
@@ -49,7 +51,9 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
     if (hasSpokenRef.current) return;
     hasSpokenRef.current = true;
 
-    const narration = isNormalWin
+    const narration = isTie
+      ? "审判结果揭晓！票数持平，本局判为平局！内鬼与好人势均力敌，机密下落成谜！"
+      : isNormalWin
       ? "最终审判结果揭晓！众人明察秋毫，成功将潜伏内鬼投出局，好人阵营大获全胜！"
       : "最终审判结果揭晓！内鬼瞒天过海，成功迷惑了全场视线，潜伏阵营大获全胜！";
     const extra = report?.trapAchievement
@@ -60,7 +64,7 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
     return () => {
       speech.stop();
     };
-  }, [isNormalWin, report?.trapAchievement]);
+  }, [isTie, isNormalWin, report?.trapAchievement]);
 
   // 整理投票排行榜
   const sortedPlayers = [...roomPlayers].sort(
@@ -78,31 +82,39 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           className={`rounded-3xl p-5 border text-center relative overflow-hidden shadow-md ${
-            isNormalWin
+            isTie
+              ? "bg-gradient-to-b from-amber-50 via-white to-slate-50 dark:from-amber-950/70 dark:via-cyber-card dark:to-cyber-deep border-amber-300 dark:border-amber-400/60 ring-1 ring-amber-200 dark:ring-amber-400/30"
+              : isNormalWin
               ? "bg-gradient-to-b from-emerald-50 via-white to-slate-50 dark:from-[#0E2C33]/80 dark:via-cyber-card dark:to-cyber-deep border-emerald-300 dark:border-neon-teal/60 ring-1 ring-emerald-200 dark:ring-neon-teal/30 neon-glow-teal"
               : "bg-gradient-to-b from-rose-50 via-white to-slate-50 dark:from-[#351228]/80 dark:via-cyber-card dark:to-cyber-deep border-rose-300 dark:border-neon-magenta/60 ring-1 ring-rose-200 dark:ring-neon-magenta/30 neon-glow-magenta"
           }`}
         >
           <div
             className={`w-14 h-14 rounded-2xl mx-auto flex items-center justify-center mb-2.5 ${
-              isNormalWin 
+              isTie
+                ? "bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-400/40 shadow-xs"
+                : isNormalWin 
                 ? "bg-emerald-100 text-emerald-700 border border-emerald-300 dark:bg-neon-teal/20 dark:text-neon-teal dark:border-neon-teal/35 shadow-xs" 
                 : "bg-rose-100 text-rose-700 border border-rose-300 dark:bg-neon-magenta/20 dark:text-neon-magenta dark:border-neon-magenta/35 shadow-xs"
             }`}
           >
-            {isNormalWin ? <Shield className="w-8 h-8" /> : <Skull className="w-8 h-8" />}
+            {isTie ? <Scale className="w-8 h-8" /> : isNormalWin ? <Shield className="w-8 h-8" /> : <Skull className="w-8 h-8" />}
           </div>
 
           <h2
             className={`text-2xl font-black tracking-wider ${
-              isNormalWin ? "text-emerald-700 dark:text-neon-teal" : "text-rose-700 dark:text-neon-magenta"
+              isTie
+                ? "text-amber-700 dark:text-amber-300"
+                : isNormalWin ? "text-emerald-700 dark:text-neon-teal" : "text-rose-700 dark:text-neon-magenta"
             }`}
           >
-            {isNormalWin ? "普通员工阵营胜利！" : "内鬼阵营成功脱身！"}
+            {isTie ? "平票僵局 · 本局握手言和" : isNormalWin ? "普通员工阵营胜利！" : "内鬼阵营成功脱身！"}
           </h2>
 
           <p className="text-xs text-slate-600 dark:text-neutral-300 mt-1 max-w-[280px] mx-auto leading-relaxed font-medium">
-            {isNormalWin
+            {isTie
+              ? "终局投票最高票数出现平局，好人与内鬼势均力敌未分高下，建议原班人马再来一局决一死战！"
+              : isNormalWin
               ? "众人敏锐捕捉现场反常细节，在终局投票中精准指认出真凶，机密企划安全保全！"
               : "内鬼巧妙挑拨了团队信任，诱导全场投票指认了替罪羊，从容脱身胜出！"}
           </p>
