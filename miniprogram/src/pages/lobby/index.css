@@ -1,0 +1,127 @@
+.lobby-page .room-code-card {
+  text-align: center;
+}
+
+.lobby-page .room-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24rpx;
+  margin: 16rpx 0;
+}
+
+.lobby-page .room-code {
+  font-size: 56rpx;
+  font-weight: 800;
+  color: #a5b4fc;
+  letter-spacing: 16rpx;
+}
+
+.lobby-page .copy-btn {
+  font-size: 22rpx;
+  background: #1e293b;
+  color: #94a3b8;
+  border-radius: 8rpx;
+  padding: 8rpx 24rpx;
+  line-height: 1.8;
+}
+
+.lobby-page .copy-btn::after {
+  border: none;
+}
+
+.lobby-page .theme-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.lobby-page .theme-switch {
+  font-size: 26rpx;
+}
+
+.lobby-page .theme-bg {
+  display: block;
+  margin-top: 8rpx;
+}
+
+.lobby-page .theme-list {
+  max-height: 480rpx;
+  margin-top: 24rpx;
+}
+
+.lobby-page .theme-item {
+  padding: 24rpx;
+  border: 1rpx solid #334155;
+  border-radius: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.lobby-page .theme-item-name {
+  display: block;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.lobby-page .theme-item-bg {
+  display: block;
+  margin-top: 8rpx;
+}
+
+.lobby-page .player-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24rpx;
+}
+
+.lobby-page .player-cell {
+  width: 144rpx;
+  text-align: center;
+}
+
+.lobby-page .player-avatar {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  background: #1e293b;
+  border: 2rpx solid #334155;
+}
+
+.lobby-page .player-name {
+  display: block;
+  font-size: 22rpx;
+  color: #cbd5e1;
+  margin-top: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-page .player-status {
+  display: block;
+  font-size: 20rpx;
+  color: #64748b;
+}
+
+.lobby-page .player-status.ready {
+  color: #4ade80;
+}
+
+.lobby-actions {
+  margin-top: 16rpx;
+}
+
+.lobby-actions .start-hint {
+  display: block;
+  text-align: center;
+  margin-top: 12rpx;
+}
+
+.lobby-actions .bots-btn {
+  margin-top: 20rpx;
+}
+
+.lobby-actions .leave-btn {
+  margin-top: 32rpx;
+}

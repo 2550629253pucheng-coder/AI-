@@ -1,0 +1,108 @@
+/* AI局中局 - 小程序全局样式（深色悬疑主题） */
+page {
+  background: #0b0f19;
+  color: #e2e8f0;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+.page-container {
+  min-height: 100vh;
+  padding: 32rpx;
+  box-sizing: border-box;
+}
+
+.card {
+  background: #131a2a;
+  border: 1rpx solid #1e293b;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+}
+
+.card-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin-bottom: 16rpx;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border-radius: 999rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  padding: 24rpx 0;
+  text-align: center;
+  border: none;
+}
+
+.btn-primary::after {
+  border: none;
+}
+
+.btn-secondary {
+  background: #1e293b;
+  color: #cbd5e1;
+  border-radius: 999rpx;
+  font-size: 30rpx;
+  padding: 22rpx 0;
+  text-align: center;
+  border: 1rpx solid #334155;
+}
+
+.btn-secondary::after {
+  border: none;
+}
+
+.btn-danger {
+  background: #7f1d1d;
+  color: #fecaca;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  padding: 18rpx 0;
+  text-align: center;
+}
+
+.btn-danger::after {
+  border: none;
+}
+
+.btn-disabled {
+  opacity: 0.45;
+}
+
+.input-dark {
+  background: #0f172a;
+  border: 1rpx solid #334155;
+  border-radius: 16rpx;
+  padding: 22rpx 28rpx;
+  color: #e2e8f0;
+  font-size: 30rpx;
+}
+
+.text-muted {
+  color: #64748b;
+  font-size: 24rpx;
+}
+
+.text-accent {
+  color: #a5b4fc;
+}
+
+.tag {
+  display: inline-block;
+  background: #1e293b;
+  color: #94a3b8;
+  border-radius: 8rpx;
+  padding: 4rpx 16rpx;
+  font-size: 22rpx;
+  margin-right: 12rpx;
+}
+
+.divider {
+  height: 1rpx;
+  background: #1e293b;
+  margin: 24rpx 0;
+}

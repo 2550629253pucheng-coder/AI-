@@ -3,7 +3,7 @@
  * 使用 Taro.connectSocket 替代标准浏览器 WebSocket，支持重连与心跳
  */
 import Taro from "@tarojs/taro";
-import { SERVER_BASE_URL } from "./api.taro.js";
+import { SERVER_BASE_URL } from "./api.taro";
 
 type MessageCallback = (data: any) => void;
 
@@ -31,17 +31,15 @@ class TaroWebSocketClient {
     const wsBaseUrl = SERVER_BASE_URL.replace(/^http:/, "ws:").replace(/^https:/, "wss:");
     const wsUrl = `${wsBaseUrl}/ws?roomId=${encodeURIComponent(roomId)}&playerId=${encodeURIComponent(playerId)}`;
 
-    Taro.connectSocket({
-      url: wsUrl,
-      success: (task) => {
+    Taro.connectSocket({ url: wsUrl })
+      .then((task) => {
         this.socketTask = task;
         this.setupTaskListeners(task, roomId, playerId);
-      },
-      fail: (err) => {
+      })
+      .catch((err) => {
         console.warn("[TaroWS] connectSocket fail:", err);
         this.scheduleReconnect();
-      },
-    });
+      });
   }
 
   private setupTaskListeners(task: Taro.SocketTask, roomId: string, playerId: string) {

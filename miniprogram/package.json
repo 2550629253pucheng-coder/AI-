@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build:weapp": "taro build --type weapp",
-    "dev:weapp": "taro build --type weapp --watch"
+    "dev:weapp": "taro build --type weapp --watch",
+    "sync-types": "cp ../src/types/game.ts src/types/game.ts"
   },
   "dependencies": {
     "@tarojs/components": "^4.0.0",
@@ -21,11 +22,16 @@
     "@tarojs/runtime": "^4.0.0",
     "@tarojs/shared": "^4.0.0",
     "@tarojs/taro": "^4.0.0",
+    "@tarojs/webpack5-runner": "^4.2.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@babel/preset-react": "^8.0.1",
+    "@babel/preset-typescript": "^8.0.1",
     "@tarojs/cli": "^4.0.0",
-    "typescript": "^5.0.0"
+    "babel-preset-taro": "^4.2.1",
+    "typescript": "^5.0.0",
+    "webpack": "^5.91.0"
   }
 }

@@ -1,0 +1,92 @@
+.result-page .result-hero {
+  text-align: center;
+  padding: 48rpx 0 32rpx;
+}
+
+.result-page .result-title {
+  font-size: 48rpx;
+  font-weight: 800;
+  color: #fbbf24;
+}
+
+.result-page .spy-reveal-card {
+  border-color: #7f1d1d;
+  background: linear-gradient(160deg, #2a0a0a, #131a2a);
+}
+
+.result-page .spy-name {
+  display: block;
+  font-size: 30rpx;
+  color: #fca5a5;
+  font-weight: 600;
+  margin-top: 8rpx;
+}
+
+.result-page .report-card {
+  border-color: #4c1d95;
+}
+
+.result-page .report-summary {
+  display: block;
+  font-size: 28rpx;
+  color: #e2e8f0;
+  line-height: 1.8;
+}
+
+.result-page .report-line {
+  display: block;
+  font-size: 26rpx;
+  color: #cbd5e1;
+  margin-top: 12rpx;
+}
+
+.result-page .trap-line {
+  color: #fcd34d;
+}
+
+.result-page .watermark {
+  display: block;
+  margin-top: 24rpx;
+  text-align: right;
+}
+
+.result-page .tag-item {
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #1e293b;
+}
+
+.result-page .tag-item:last-child {
+  border-bottom: none;
+}
+
+.result-page .tag-item-header {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.result-page .tag-player {
+  font-size: 28rpx;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.result-page .tag-title {
+  font-size: 26rpx;
+  color: #a5b4fc;
+}
+
+.result-page .result-ops {
+  margin-top: 32rpx;
+  padding-bottom: 64rpx;
+}
+
+.result-page .wait-owner {
+  display: block;
+  text-align: center;
+  padding: 24rpx 0;
+}
+
+.result-page .home-btn {
+  margin-top: 20rpx;
+}

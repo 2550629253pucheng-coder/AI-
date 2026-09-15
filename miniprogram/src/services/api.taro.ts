@@ -11,7 +11,7 @@ import {
   ThemeTemplate,
   RoomVoiceMessage,
   PlayerAction,
-} from "../types/game.js";
+} from "../types/game";
 
 // 小程序生产环境服务器域名（上线前需在微信公众平台配置合法 request 域名）
 export const SERVER_BASE_URL =
@@ -26,7 +26,10 @@ export interface UserSession {
 
 const TOKEN_KEY = "ai_impostor_token";
 
-async function requestWithAuth(url: string, options: Taro.request.Option = { url: "" }): Promise<any> {
+async function requestWithAuth(
+  url: string,
+  options: Omit<Taro.request.Option, "url"> = {}
+): Promise<any> {
   const token = Taro.getStorageSync(TOKEN_KEY);
   const headers = {
     "Content-Type": "application/json",
@@ -109,6 +112,66 @@ export const TaroGameAPI = {
     const data: any = await requestWithAuth(`${SERVER_BASE_URL}/api/room/${roomId}`);
     if (!data.success) throw new Error(data.error || "获取房间信息失败");
     return { room: data.room, game: data.game };
+  },
+
+  async getRoomByCode(roomCode: string): Promise<{ room: Room; game?: Game }> {
+    const data: any = await requestWithAuth(`${SERVER_BASE_URL}/api/room/code/${encodeURIComponent(roomCode)}`);
+    if (!data.success) throw new Error(data.error || "房间不存在或已解散");
+    return { room: data.room, game: data.game };
+  },
+
+  async leaveRoom(roomId: string): Promise<Room> {
+    const data: any = await requestWithAuth(`${SERVER_BASE_URL}/api/room/leave`, {
+      method: "POST",
+      data: { roomId },
+    });
+    if (!data.success) throw new Error(data.error || "退出房间失败");
+    return data.room;
+  },
+
+  async setReady(roomId: string, isReady: boolean): Promise<Room> {
+    const data: any = await requestWithAuth(`${SERVER_BASE_URL}/api/room/ready`, {
+      method: "POST",
+      data: { roomId, isReady },
+    });
+    if (!data.success) throw new Error(data.error || "操作失败");
+    return data.room;
+  },
+
+  async addBots(roomId: string, count: number = 6): Promise<Room> {
+    const data: any = await requestWithAuth(`${SERVER_BASE_URL}/api/room/add-bots`, {
+      method: "POST",
+      data: { roomId, count },
+    });
+    if (!data.success) throw new Error(data.error || "添加 AI 好友失败");
+    return data.room;
+  },
+
+  async restartGame(roomId: string): Promise<{ room: Room; game: Game }> {
+    const data: any = await requestWithAuth(`${SERVER_BASE_URL}/api/game/restart`, {
+      method: "POST",
+      data: { roomId },
+    });
+    if (!data.success) throw new Error(data.error || "再来一局失败");
+    return { room: data.room, game: data.game };
+  },
+
+  async triggerBotActions(gameId: string): Promise<{ game: Game; room: Room }> {
+    const data: any = await requestWithAuth(`${SERVER_BASE_URL}/api/game/bot-auto-act`, {
+      method: "POST",
+      data: { gameId },
+    });
+    if (!data.success) throw new Error(data.error || "触发好友行动失败");
+    return { game: data.game, room: data.room };
+  },
+
+  async generateCustomTheme(prompt: string): Promise<{ theme: ThemeTemplate; watermark?: string }> {
+    const data: any = await requestWithAuth(`${SERVER_BASE_URL}/api/theme/generate`, {
+      method: "POST",
+      data: { prompt },
+    });
+    if (!data.success) throw new Error(data.error || "AI 剧本生成失败");
+    return { theme: data.theme, watermark: data.watermark };
   },
 
   async setRoomTheme(roomId: string, theme: ThemeTemplate): Promise<Room> {

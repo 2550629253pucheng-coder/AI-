@@ -22,8 +22,4 @@ export default defineAppConfig({
       desc: "你的录音将用于在对局中发言与传递秘密线索",
     },
   },
-  requiredPrivateInfos: [
-    "chooseAddress",
-    "chooseLocation",
-  ],
 });

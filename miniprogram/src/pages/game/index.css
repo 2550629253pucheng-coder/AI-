@@ -1,0 +1,181 @@
+.game-page .phase-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 8rpx;
+}
+
+.game-page .phase-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #a5b4fc;
+}
+
+.game-page .phase-countdown {
+  font-size: 30rpx;
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.game-page .event-card {
+  border-color: #4c1d95;
+  background: linear-gradient(160deg, #1e1b4b, #131a2a);
+}
+
+.game-page .event-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #e9d5ff;
+}
+
+.game-page .event-desc {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #cbd5e1;
+}
+
+.game-page .event-clue {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #fcd34d;
+}
+
+.game-page .event-prompt {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #94a3b8;
+}
+
+.game-page .director-bar {
+  background: #2a1a3e;
+  border-left: 6rpx solid #a855f7;
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 24rpx;
+}
+
+.game-page .director-text {
+  font-size: 26rpx;
+  color: #e9d5ff;
+}
+
+.game-page .action-feed {
+  height: 520rpx;
+  margin-bottom: 24rpx;
+}
+
+.game-page .feed-empty {
+  display: block;
+  text-align: center;
+  padding: 64rpx 0;
+}
+
+.game-page .action-item {
+  background: #131a2a;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.game-page .action-item.mine {
+  background: #1e2540;
+  border: 1rpx solid #3730a3;
+}
+
+.game-page .action-meta {
+  display: block;
+  font-size: 22rpx;
+  color: #64748b;
+}
+
+.game-page .action-content {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 28rpx;
+  color: #e2e8f0;
+  word-break: break-all;
+}
+
+.game-page .input-area {
+  background: #131a2a;
+  border-radius: 24rpx;
+  padding: 24rpx;
+}
+
+.game-page .action-type-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+  flex-wrap: wrap;
+}
+
+.game-page .type-chip {
+  font-size: 24rpx;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: #1e293b;
+  color: #94a3b8;
+}
+
+.game-page .type-chip.active {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.game-page .target-row {
+  white-space: nowrap;
+  margin-bottom: 16rpx;
+}
+
+.game-page .target-chip {
+  display: inline-block;
+  font-size: 24rpx;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: #1e293b;
+  color: #94a3b8;
+  margin-right: 16rpx;
+}
+
+.game-page .target-chip.active {
+  background: #be123c;
+  color: #fff;
+}
+
+.game-page .input-row {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.game-page .msg-input {
+  flex: 1;
+}
+
+.game-page .send-btn {
+  background: #4f46e5;
+  color: #fff;
+  font-size: 26rpx;
+  border-radius: 16rpx;
+  padding: 0 32rpx;
+  line-height: 2.6;
+}
+
+.game-page .send-btn::after {
+  border: none;
+}
+
+.game-page .game-ops {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.game-page .op-btn {
+  flex: 1;
+  font-size: 26rpx;
+}

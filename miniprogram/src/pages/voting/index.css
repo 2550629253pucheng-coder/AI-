@@ -1,0 +1,79 @@
+.voting-page .voting-header {
+  text-align: center;
+  padding: 48rpx 0 32rpx;
+}
+
+.voting-page .voting-title {
+  display: block;
+  font-size: 44rpx;
+  font-weight: 800;
+  color: #fca5a5;
+}
+
+.voting-page .vote-progress {
+  display: block;
+  margin-top: 16rpx;
+  color: #fbbf24;
+  font-size: 26rpx;
+}
+
+.voting-page .candidate-list {
+  margin-bottom: 32rpx;
+}
+
+.voting-page .candidate-item {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  background: #131a2a;
+  border: 2rpx solid #1e293b;
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.voting-page .candidate-item.selected {
+  border-color: #e11d48;
+  background: #2a1220;
+}
+
+.voting-page .candidate-avatar {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  background: #1e293b;
+}
+
+.voting-page .candidate-info {
+  flex: 1;
+}
+
+.voting-page .candidate-name {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.voting-page .check-icon {
+  font-size: 40rpx;
+  color: #e11d48;
+  font-weight: 800;
+}
+
+.voting-page .vote-btn {
+  background: linear-gradient(135deg, #be123c, #e11d48);
+}
+
+.voting-page .voted-card {
+  text-align: center;
+  padding: 64rpx 32rpx;
+}
+
+.voting-page .voted-text {
+  display: block;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #4ade80;
+  margin-bottom: 16rpx;
+}

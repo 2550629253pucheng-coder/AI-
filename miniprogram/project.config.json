@@ -1,0 +1,14 @@
+{
+  "miniprogramRoot": "dist/",
+  "projectname": "ai-impostor-miniprogram",
+  "description": "AI局中局 - 微信熟人社交推理小游戏",
+  "appid": "touristappid",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "minified": true,
+    "postcss": false,
+    "ignoreUploadUnusedFiles": true
+  },
+  "compileType": "miniprogram"
+}
